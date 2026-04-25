@@ -1,0 +1,1529 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { 
+  Plus, Trash2, Share2, Download, Settings, 
+  Image as ImageIcon, LayoutTemplate, X, MoveRight, MoveDown,
+  Bell, BellRing, Info, Edit2, Save, Upload, FileJson, Type, Palette, 
+  RotateCcw, FolderOpen, Undo2, Redo2, QrCode, Images, MousePointerSquareDashed,
+  RotateCw, Maximize2, PackageOpen, PackageCheck, ArrowDownAZ, SlidersHorizontal, AlertOctagon, CheckSquare, Clock, HelpCircle
+} from 'lucide-react';
+
+// --- 安全存取 LocalStorage ---
+const safeStorage = {
+  getItem: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  setItem: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }
+};
+
+// --- 輔助函式：優化版文字對比色 (補上預設值保護) ---
+function getContrastYIQ(hexcolor, threshold = 150) {
+  if (!hexcolor) return 'black';
+  hexcolor = hexcolor.replace("#", "");
+  if (hexcolor.length === 3) hexcolor = hexcolor.split('').map(c => c + c).join('');
+  const r = parseInt(hexcolor.substr(0, 2), 16);
+  const g = parseInt(hexcolor.substr(2, 2), 16);
+  const b = parseInt(hexcolor.substr(4, 2), 16);
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return (yiq >= threshold) ? '#111111' : '#ffffff';
+}
+
+// --- 字體選項 (究極擴充至 128 種) ---
+const FONTS = [
+  // 系統與經典
+  { id: 'font-sans', name: '系統預設黑體', family: 'system-ui, sans-serif' },
+  { id: 'font-noto-sans', name: '思源黑體', family: '"Noto Sans TC", sans-serif' },
+  { id: 'font-noto-serif', name: '思源宋體', family: '"Noto Serif TC", serif' },
+  // 日系與迷因
+  { id: 'font-meme', name: '游星手寫 (迷因)', family: '"Yusei Magic", sans-serif' },
+  { id: 'font-dot', name: '像素點陣', family: '"DotGothic16", sans-serif' },
+  { id: 'font-zen-maru', name: '日系圓體', family: '"Zen Maru Gothic", sans-serif' },
+  { id: 'font-rocknroll', name: '搖滾流行', family: '"RocknRoll One", sans-serif' },
+  { id: 'font-reggae', name: '雷鬼動感', family: '"Reggae One", sans-serif' },
+  { id: 'font-stick', name: '硬筆直線', family: '"Stick", sans-serif' },
+  { id: 'font-mochiy', name: '可愛胖胖', family: '"Mochiy Pop P One", sans-serif' },
+  { id: 'font-hachi', name: '八丸圓體', family: '"Hachi Maru Pop", sans-serif' },
+  { id: 'font-kaisei', name: '海星裝飾', family: '"Kaisei Decol", serif' },
+  { id: 'font-yuji', name: '明朝手寫', family: '"Yuji Syuku", serif' },
+  { id: 'font-rampart', name: '立體空心', family: '"Rampart One", sans-serif' },
+  { id: 'font-dela', name: '極粗黑體', family: '"Dela Gothic One", sans-serif' },
+  // 站酷與中式
+  { id: 'font-zcool-kuaile', name: '站酷快樂', family: '"ZCOOL KuaiLe", sans-serif' },
+  { id: 'font-zcool-huangyou', name: '站酷黃油', family: '"ZCOOL QingKe HuangYou", sans-serif' },
+  { id: 'font-ma-shan-zheng', name: '馬善政毛筆', family: '"Ma Shan Zheng", cursive' },
+  { id: 'font-zhi-mang-xing', name: '志莽行書', family: '"Zhi Mang Xing", cursive' },
+  { id: 'font-liu-jian', name: '流江毛草', family: '"Liu Jian Mao Cao", cursive' },
+  { id: 'font-lxgw', name: '霞鶩文楷', family: '"LXGW WenKai TC", cursive' },
+  // 英文與風格化
+  { id: 'font-caveat', name: '英文手寫', family: '"Caveat", cursive' },
+  { id: 'font-pacifico', name: '英文連筆', family: '"Pacifico", cursive' },
+  { id: 'font-press-start', name: '復古街機', family: '"Press Start 2P", cursive' },
+  { id: 'font-bangers', name: '美漫標題', family: '"Bangers", cursive' },
+  { id: 'font-rubik-glitch', name: '數位故障', family: '"Rubik Glitch", cursive' },
+  { id: 'font-silkscreen', name: '復古網版', family: '"Silkscreen", cursive' },
+  { id: 'font-oswald', name: '歐美報頭 (Oswald)', family: '"Oswald", sans-serif' },
+  { id: 'font-playfair', name: '時尚襯線 (Playfair)', family: '"Playfair Display", serif' },
+  { id: 'font-cinzel', name: '羅馬碑文 (Cinzel)', family: '"Cinzel", serif' },
+  { id: 'font-bungee', name: '厚重海報 (Bungee)', family: '"Bungee", cursive' },
+  { id: 'font-righteous', name: '現代幾何 (Righteous)', family: '"Righteous", cursive' },
+  { id: 'font-creepster', name: '萬聖驚悚 (Creepster)', family: '"Creepster", cursive' },
+  { id: 'font-black-ops', name: '軍事模版 (Black Ops)', family: '"Black Ops One", cursive' },
+  { id: 'font-monoton', name: '霓虹賽道 (Monoton)', family: '"Monoton", cursive' },
+  { id: 'font-orbitron', name: '科幻未來 (Orbitron)', family: '"Orbitron", sans-serif' },
+  { id: 'font-audiowide', name: '電子金屬 (Audiowide)', family: '"Audiowide", cursive' },
+  { id: 'font-vt323', name: '終端機字 (VT323)', family: '"VT323", monospace' },
+  { id: 'font-amatic', name: '文青細手寫 (Amatic)', family: '"Amatic SC", cursive' },
+  { id: 'font-sacramento', name: '優雅草書 (Sacramento)', family: '"Sacramento", cursive' },
+  { id: 'font-fredoka', name: '圓潤Q版 (Fredoka)', family: '"Fredoka One", cursive' },
+  { id: 'font-lilita', name: '卡通標題 (Lilita)', family: '"Lilita One", cursive' },
+  { id: 'font-anton', name: '極簡粗黑 (Anton)', family: '"Anton", sans-serif' },
+  { id: 'font-bebas', name: '高瘦黑體 (Bebas)', family: '"Bebas Neue", cursive' },
+  { id: 'font-teko', name: '科技方塊 (Teko)', family: '"Teko", sans-serif' },
+  { id: 'font-abril', name: '復古雜誌 (Abril)', family: '"Abril Fatface", cursive' },
+  { id: 'font-gloria', name: '粉筆塗鴉 (Gloria)', family: '"Gloria Hallelujah", cursive' },
+  { id: 'font-indie', name: '隨性麥克筆 (Indie)', family: '"Indie Flower", cursive' },
+  { id: 'font-shadows', name: '陰影手寫 (Shadows)', family: '"Shadows Into Light", cursive' },
+  { id: 'font-comfortaa', name: '圓角幾何 (Comfortaa)', family: '"Comfortaa", cursive' },
+  { id: 'font-concert', name: '演唱會海報 (Concert)', family: '"Concert One", cursive' },
+  { id: 'font-cookie', name: '甜點招牌 (Cookie)', family: '"Cookie", cursive' },
+  { id: 'font-courgette', name: '傾斜毛筆 (Courgette)', family: '"Courgette", cursive' },
+  { id: 'font-luckiest', name: '幸運兒 (Luckiest)', family: '"Luckiest Guy", cursive' },
+  { id: 'font-shrikhand', name: '波浪粗黑 (Shrikhand)', family: '"Shrikhand", cursive' },
+  { id: 'font-titan', name: '巨人體 (Titan)', family: '"Titan One", cursive' },
+  { id: 'font-ultra', name: '超粗西部 (Ultra)', family: '"Ultra", serif' },
+  { id: 'font-vollkorn', name: '德國經典 (Vollkorn)', family: '"Vollkorn", serif' },
+  { id: 'font-modak', name: '超胖氣球 (Modak)', family: '"Modak", cursive' },
+  { id: 'font-nosifer', name: '融化滴血 (Nosifer)', family: '"Nosifer", cursive' },
+  { id: 'font-racing', name: '賽車斜體 (Racing)', family: '"Racing Sans One", cursive' },
+  { id: 'font-rye', name: '西部通緝 (Rye)', family: '"Rye", cursive' },
+  { id: 'font-chewy', name: '嚼嚼軟糖 (Chewy)', family: '"Chewy", cursive' },
+  { id: 'font-fascinate', name: '百老匯 (Fascinate)', family: '"Fascinate", cursive' },
+  { id: 'font-macondo', name: '魔法書 (Macondo)', family: '"Macondo", cursive' },
+  { id: 'font-metal-mania', name: '重金屬 (Metal Mania)', family: '"Metal Mania", cursive' },
+  { id: 'font-roboto', name: '機器人黑 (Roboto)', family: '"Roboto", sans-serif' },
+  { id: 'font-open-sans', name: '開放黑體 (Open Sans)', family: '"Open Sans", sans-serif' },
+  { id: 'font-lato', name: '拉托體 (Lato)', family: '"Lato", sans-serif' },
+  { id: 'font-montserrat', name: '蒙特塞拉特 (Montserrat)', family: '"Montserrat", sans-serif' },
+  { id: 'font-poppins', name: '波平斯 (Poppins)', family: '"Poppins", sans-serif' },
+  { id: 'font-inter', name: '國際字體 (Inter)', family: '"Inter", sans-serif' },
+  { id: 'font-nunito', name: '努尼托圓體 (Nunito)', family: '"Nunito", sans-serif' },
+  { id: 'font-raleway', name: '雷利威 (Raleway)', family: '"Raleway", sans-serif' },
+  { id: 'font-ubuntu', name: '烏班圖 (Ubuntu)', family: '"Ubuntu", sans-serif' },
+  { id: 'font-merriweather', name: '梅里韋瑟 (Merriweather)', family: '"Merriweather", serif' },
+  { id: 'font-lora', name: '蘿拉襯線 (Lora)', family: '"Lora", serif' },
+  { id: 'font-pt-serif', name: 'PT 襯線 (PT Serif)', family: '"PT Serif", serif' },
+  { id: 'font-quicksand', name: '流沙圓體 (Quicksand)', family: '"Quicksand", sans-serif' },
+  { id: 'font-rubik', name: '魔術方塊 (Rubik)', family: '"Rubik", sans-serif' },
+  { id: 'font-work-sans', name: '工作黑體 (Work Sans)', family: '"Work Sans", sans-serif' },
+  { id: 'font-fira-sans', name: '火狐字體 (Fira Sans)', family: '"Fira Sans", sans-serif' },
+  { id: 'font-barlow', name: '巴洛字體 (Barlow)', family: '"Barlow", sans-serif' },
+  { id: 'font-inconsolata', name: '等寬程式 (Inconsolata)', family: '"Inconsolata", monospace' },
+  { id: 'font-josefin-sans', name: '約瑟芬 (Josefin Sans)', family: '"Josefin Sans", sans-serif' },
+  { id: 'font-libre-baskerville', name: '巴斯克維爾 (Libre Baskerville)', family: '"Libre Baskerville", serif' },
+  { id: 'font-fjalla-one', name: '弗亞拉 (Fjalla One)', family: '"Fjalla One", sans-serif' },
+  { id: 'font-dosis', name: '多西斯圓體 (Dosis)', family: '"Dosis", sans-serif' },
+  { id: 'font-cairo', name: '開羅字體 (Cairo)', family: '"Cairo", sans-serif' },
+  { id: 'font-signika', name: '西格尼卡 (Signika)', family: '"Signika", sans-serif' },
+  { id: 'font-abhaya-libre', name: '阿巴亞 (Abhaya Libre)', family: '"Abhaya Libre", serif' },
+  { id: 'font-archivo', name: '檔案字體 (Archivo)', family: '"Archivo", sans-serif' },
+  { id: 'font-exo-2', name: '外星字體 (Exo 2)', family: '"Exo 2", sans-serif' },
+  { id: 'font-varela-round', name: '瓦雷拉圓體 (Varela Round)', family: '"Varela Round", sans-serif' },
+  { id: 'font-asap', name: '盡快字體 (Asap)', family: '"Asap", sans-serif' },
+  { id: 'font-heebo', name: '希伯字體 (Heebo)', family: '"Heebo", sans-serif' },
+  { id: 'font-kanit', name: '卡尼特 (Kanit)', family: '"Kanit", sans-serif' },
+  { id: 'font-karla', name: '卡拉字體 (Karla)', family: '"Karla", sans-serif' },
+  { id: 'font-crimson-text', name: '深紅襯線 (Crimson Text)', family: '"Crimson Text", serif' },
+  { id: 'font-cabin', name: '小木屋 (Cabin)', family: '"Cabin", sans-serif' },
+  { id: 'font-hind', name: '印度字體 (Hind)', family: '"Hind", sans-serif' },
+  { id: 'font-arvo', name: '阿爾沃 (Arvo)', family: '"Arvo", serif' },
+  { id: 'font-mukta', name: '穆克塔 (Mukta)', family: '"Mukta", sans-serif' },
+  { id: 'font-bitter', name: '苦澀襯線 (Bitter)', family: '"Bitter", serif' },
+  { id: 'font-oxygen', name: '氧氣字體 (Oxygen)', family: '"Oxygen", sans-serif' },
+  { id: 'font-cabin-sketch', name: '木屋草圖 (Cabin Sketch)', family: '"Cabin Sketch", cursive' }
+];
+
+const PRESET_COLORS = [
+  "#FF7F7F", "#FFBF7F", "#FFFF7F", "#7FFF7F", "#7FBFFF", "#BFFF7F", "#FF7FFF", "#4A4A4A", 
+  "#FF5C5C", "#F59E0B", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899", "#111111", "#F5F5F5"
+];
+
+// --- 修復：完整恢復 12 大經典迷因模板 ---
+const TEMPLATES = [
+  { id: "hot", title: "夯度發電站", axisName: "由夯到拉", levels: [{ id: "l1", label: "S 超夯", color: PRESET_COLORS[0], textColor: '#111', score: 100 }, { id: "l2", label: "A 微夯", color: PRESET_COLORS[1], textColor: '#111', score: 80 }, { id: "l3", label: "B 普普", color: PRESET_COLORS[2], textColor: '#111', score: 60 }, { id: "l4", label: "C 微拉", color: PRESET_COLORS[3], textColor: '#111', score: 40 }, { id: "l5", label: "D 超拉", color: PRESET_COLORS[4], textColor: '#111', score: 20 }] },
+  { id: "spicy", title: "辣度分級", axisName: "辣度", levels: [{ id: "s1", label: "冥界", color: "#8B0000", textColor: '#fff', score: 100 }, { id: "s2", label: "印度", color: PRESET_COLORS[0], textColor: '#111', score: 80 }, { id: "s3", label: "重度", color: PRESET_COLORS[1], textColor: '#111', score: 60 }, { id: "s4", label: "中度", color: PRESET_COLORS[2], textColor: '#111', score: 40 }, { id: "s5", label: "輕度", color: PRESET_COLORS[3], textColor: '#111', score: 20 }] },
+  { id: "taiwan", title: "台灣味強度", axisName: "台味指數", levels: [{ id: "t1", label: "難波萬", color: PRESET_COLORS[0], textColor: '#111', score: 100 }, { id: "t2", label: "過度台", color: PRESET_COLORS[1], textColor: '#111', score: 80 }, { id: "t3", label: "正港", color: "#FFD700", textColor: '#111', score: 60 }, { id: "t4", label: "微台", color: PRESET_COLORS[4], textColor: '#111', score: 40 }, { id: "t5", label: "超淡", color: PRESET_COLORS[15], textColor: '#111', score: 20 }] },
+  { id: "meme", title: "各國梗濃度", axisName: "梗度", levels: [{ id: "m1", label: "超越迷因", color: PRESET_COLORS[6], textColor: '#111', score: 100 }, { id: "m2", label: "大帝國", color: PRESET_COLORS[0], textColor: '#111', score: 80 }, { id: "m3", label: "梗圖級", color: PRESET_COLORS[1], textColor: '#111', score: 60 }, { id: "m4", label: "小梗", color: PRESET_COLORS[4], textColor: '#111', score: 40 }, { id: "m5", label: "無感", color: PRESET_COLORS[7], textColor: '#fff', score: 20 }] },
+  { id: "work", title: "辦公室厭世", axisName: "厭世度", levels: [{ id: "w1", label: "已登出", color: PRESET_COLORS[7], textColor: '#fff', score: 100 }, { id: "w2", label: "行屍走肉", color: PRESET_COLORS[4], textColor: '#111', score: 80 }, { id: "w3", label: "厭世", color: PRESET_COLORS[1], textColor: '#111', score: 60 }, { id: "w4", label: "微厭", color: PRESET_COLORS[2], textColor: '#111', score: 40 }, { id: "w5", label: "滿滿活力", color: PRESET_COLORS[3], textColor: '#111', score: 20 }] },
+  { id: "sleep", title: "睡意等級", axisName: "睡意", levels: [{ id: "sl1", label: "精神百倍", color: PRESET_COLORS[0], textColor: '#111', score: 100 }, { id: "sl2", label: "微睏", color: PRESET_COLORS[1], textColor: '#111', score: 80 }, { id: "sl3", label: "度估", color: PRESET_COLORS[2], textColor: '#111', score: 60 }, { id: "sl4", label: "昏迷", color: PRESET_COLORS[4], textColor: '#111', score: 40 }, { id: "sl5", label: "冬眠", color: PRESET_COLORS[7], textColor: '#fff', score: 20 }] },
+  { id: "salary", title: "薪資悲傷指數", axisName: "薪水條", levels: [{ id: "sa1", label: "財富自由", color: PRESET_COLORS[0], textColor: '#111', score: 100 }, { id: "sa2", label: "小確幸", color: PRESET_COLORS[1], textColor: '#111', score: 80 }, { id: "sa3", label: "吃土", color: PRESET_COLORS[2], textColor: '#111', score: 60 }, { id: "sa4", label: "負債", color: PRESET_COLORS[3], textColor: '#111', score: 40 }, { id: "sa5", label: "社會底層", color: PRESET_COLORS[7], textColor: '#fff', score: 20 }] },
+  { id: "food", title: "便當菜色地獄度", axisName: "地獄廚房", levels: [{ id: "f1", label: "天堂", color: "#FFD700", textColor: '#111', score: 100 }, { id: "f2", label: "普普", color: PRESET_COLORS[2], textColor: '#111', score: 70 }, { id: "f3", label: "地獄", color: PRESET_COLORS[1], textColor: '#111', score: 40 }, { id: "f4", label: "暗黑料理", color: PRESET_COLORS[0], textColor: '#111', score: 10 }] },
+  { id: "social", title: "社群焦慮指數", axisName: "焦慮值", levels: [{ id: "so1", label: "淡定", color: PRESET_COLORS[0], textColor: '#111', score: 100 }, { id: "so2", label: "微FOMO", color: PRESET_COLORS[1], textColor: '#111', score: 80 }, { id: "so3", label: "焦慮", color: PRESET_COLORS[2], textColor: '#111', score: 60 }, { id: "so4", label: "數位遊牧", color: PRESET_COLORS[4], textColor: '#111', score: 40 }, { id: "so5", label: "已登出", color: PRESET_COLORS[7], textColor: '#fff', score: 20 }] },
+  { id: "service", title: "餐廳服務雷度", axisName: "雷包指數", levels: [{ id: "se1", label: "天使服務", color: PRESET_COLORS[0], textColor: '#111', score: 100 }, { id: "se2", label: "正常", color: PRESET_COLORS[15], textColor: '#111', score: 80 }, { id: "se3", label: "微雷", color: PRESET_COLORS[2], textColor: '#111', score: 60 }, { id: "se4", label: "天雷", color: PRESET_COLORS[1], textColor: '#111', score: 40 }, { id: "se5", label: "雷神索爾", color: PRESET_COLORS[6], textColor: '#111', score: 20 }] },
+  { id: "drink", title: "飲料甜度冰塊", axisName: "甜冰亂象", levels: [{ id: "d1", label: "正常", color: PRESET_COLORS[0], textColor: '#111', score: 100 }, { id: "d2", label: "半糖", color: PRESET_COLORS[1], textColor: '#111', score: 80 }, { id: "d3", label: "微糖", color: PRESET_COLORS[2], textColor: '#111', score: 60 }, { id: "d4", label: "無糖", color: PRESET_COLORS[15], textColor: '#111', score: 40 }, { id: "d5", label: "奇葩特調", color: PRESET_COLORS[6], textColor: '#111', score: 20 }] },
+  { id: "family", title: "長輩提問攻擊力", axisName: "提問強度", levels: [{ id: "fa1", label: "溫馨", color: PRESET_COLORS[0], textColor: '#111', score: 100 }, { id: "fa2", label: "微刺", color: PRESET_COLORS[1], textColor: '#111', score: 80 }, { id: "fa3", label: "尷尬", color: PRESET_COLORS[2], textColor: '#111', score: 60 }, { id: "fa4", label: "暴擊", color: PRESET_COLORS[3], textColor: '#111', score: 40 }, { id: "fa5", label: "斷絕關係", color: PRESET_COLORS[7], textColor: '#fff', score: 20 }] }
+];
+
+const TUTORIAL_ITEMS = [
+  { id: "tut-item-1", text: "珍珠奶茶", image: "https://images.unsplash.com/photo-1558857563-b37102e99e00?auto=format&fit=crop&w=200&q=80", levelId: null },
+  { id: "tut-item-2", text: "芋圓", image: "", levelId: null },
+  { id: "tut-item-3", text: "草仔粿", image: "", levelId: null }
+];
+
+// --- 全域設定預設值 ---
+const DEFAULT_SETTINGS = {
+  cardSize: 'medium',     // small, medium, large
+  cardRadius: 'md',       // none, md, full
+  layoutReversed: false,  // false: 左側素材, true: 右側素材
+  labelWidth: 'standard', // narrow, standard, wide
+  contrastThreshold: 150, // 黑白字判定閾值
+  showScoreboard: true,   // 顯示戰力計分板
+  scoreboardName: '總分/戰力指數', // 自訂計分板名稱
+  exportFormat: 'png',    // png, jpeg
+  exportRatio: 2,         // 1, 2, 3
+  historyLimit: 30,       // Undo 步數上限
+  isMultiSelectMode: false, // 手機友善多選模式
+  bgOverlay: 0.3,         // 背景圖片遮罩透明度
+  bgSize: 'cover',        // 背景圖片尺寸
+  skipExportPreview: false, // 略過匯出預覽
+  embedQR: false          // 匯出圖內嵌 QR
+};
+
+export default function App() {
+  // --- 核心狀態 ---
+  const [title, setTitle] = useState(TEMPLATES[0].title);
+  const [titleColor, setTitleColor] = useState('#ffffff');
+  const [axisName, setAxisName] = useState(TEMPLATES[0].axisName);
+  const [axisColor, setAxisColor] = useState('#e5e7eb');
+  const [levels, setLevels] = useState(TEMPLATES[0].levels);
+  const [items, setItems] = useState([]);
+  const [currentFont, setCurrentFont] = useState(FONTS[0].id);
+  const [background, setBackground] = useState('#1a1a1a');
+
+  // --- 全域設定狀態 ---
+  const [appSettings, setAppSettings] = useState(() => {
+    const saved = safeStorage.getItem('tierMakerSettings');
+    return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
+  });
+
+  // --- 選取與 UI 狀態 ---
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [draggedItemId, setDraggedItemId] = useState(null);
+  const [editingLevelId, setEditingLevelId] = useState(null);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showMaterialsModal, setShowMaterialsModal] = useState(false);
+  const [showFontMenu, setShowFontMenu] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false); // 控制全域設定面板
+  const [newItemText, setNewItemText] = useState("");
+  const [toastMessage, setToastMessage] = useState("");
+  const [showConfirmRestart, setShowConfirmRestart] = useState(false); 
+  const [tutorial, setTutorial] = useState({ active: false, step: 0 });
+  const [lastSaved, setLastSaved] = useState(null);
+  const [importProgress, setImportProgress] = useState(0); // 批次匯入進度
+  const [exportPreview, setExportPreview] = useState(null); // 匯出預覽圖片
+  const [showShortcuts, setShowShortcuts] = useState(false); // 快捷鍵面板
+  const [previewTemplate, setPreviewTemplate] = useState(null); // 預覽模板
+
+  // --- 對話框與歷史 ---
+  const [inputDialog, setInputDialog] = useState({ isOpen: false, type: '', itemId: '', value: '', options: {} });
+  const [confirmAction, setConfirmAction] = useState({ isOpen: false, type: '', id: '' });
+  const [history, setHistory] = useState([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+
+  // --- 素材與模板儲存 ---
+  const [customTemplates, setCustomTemplates] = useState(() => JSON.parse(safeStorage.getItem('customTierTemplates')) || []);
+  const [customMaterials, setCustomMaterials] = useState(() => JSON.parse(safeStorage.getItem('customTierMaterials')) || []);
+
+  const boardRef = useRef(null);
+  const fontMenuRef = useRef(null);
+  const settingsMenuRef = useRef(null);
+  const isUndoRedoAction = useRef(false);
+
+  // ==========================================
+  // 🚀 動態字體與設定保存
+  // ==========================================
+  useEffect(() => {
+    // 動態注入行動端拖放 Polyfill 與離線 QR 碼工具
+    if (!document.getElementById('mobile-drag-drop-script')) {
+      const script = document.createElement('script');
+      script.id = 'mobile-drag-drop-script';
+      script.src = "https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/index.min.js";
+      script.onload = () => {
+        window.MobileDragDrop.polyfill({ holdToDrag: 100 });
+        const css = document.createElement('link');
+        css.rel = "stylesheet"; css.href = "https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/default.css";
+        document.head.appendChild(css);
+      };
+      document.head.appendChild(script);
+    }
+    
+    if (!document.getElementById('qrcode-lib')) {
+      const qrScript = document.createElement('script');
+      qrScript.id = 'qrcode-lib';
+      qrScript.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
+      document.head.appendChild(qrScript);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentFont === 'font-sans') return;
+    const fontInfo = FONTS.find(f => f.id === currentFont);
+    if (!fontInfo) return;
+    const fontName = fontInfo.family.split(',')[0].replace(/['"]/g, '').trim();
+    const linkId = `google-font-${fontName.replace(/\s+/g, '-')}`;
+    
+    if (!document.getElementById(linkId)) {
+      const link = document.createElement('link');
+      link.id = linkId; link.rel = 'stylesheet';
+      link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@400;700;900&display=swap`;
+      document.head.appendChild(link);
+    }
+  }, [currentFont]);
+
+  useEffect(() => {
+    let style = document.getElementById('dynamic-font-style');
+    if (!style) {
+      style = document.createElement('style'); style.id = 'dynamic-font-style'; document.head.appendChild(style);
+    }
+    const fontInfo = FONTS.find(f => f.id === currentFont);
+    style.innerHTML = fontInfo ? `
+      .app-container { font-family: ${fontInfo.family} !important; }
+      .hide-scrollbar::-webkit-scrollbar { display: none; }
+      .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    ` : '';
+  }, [currentFont]);
+
+  useEffect(() => {
+    safeStorage.setItem('tierMakerSettings', JSON.stringify(appSettings));
+  }, [appSettings]);
+
+  // ==========================================
+  // ⏪ 歷史紀錄系統 (Undo/Redo)
+  // ==========================================
+  const saveSnapshot = useCallback(() => {
+    if (isUndoRedoAction.current) { isUndoRedoAction.current = false; return; }
+    const snapshot = JSON.stringify({ title, titleColor, axisName, axisColor, levels, items, background, currentFont, appSettings });
+    setHistory(prev => {
+      const newHistory = prev.slice(0, historyIndex + 1);
+      if (newHistory.length > 0 && newHistory[newHistory.length - 1] === snapshot) return newHistory;
+      newHistory.push(snapshot);
+      if (newHistory.length > (appSettings.historyLimit || 30)) newHistory.shift();
+      setHistoryIndex(newHistory.length - 1);
+      return newHistory;
+    });
+    setLastSaved(new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+  }, [title, titleColor, axisName, axisColor, levels, items, background, currentFont, appSettings, historyIndex]);
+
+  useEffect(() => {
+    const isTutorialDone = safeStorage.getItem('tutorial_done');
+    const hash = window.location.hash.slice(1);
+    if (hash) {
+      try {
+        const decoded = JSON.parse(decodeURIComponent(atob(hash)));
+        if (decoded.levels && decoded.items) {
+          setTitle(decoded.title || ""); setAxisName(decoded.axisName || "");
+          if (decoded.titleColor) setTitleColor(decoded.titleColor);
+          if (decoded.axisColor) setAxisColor(decoded.axisColor);
+          setLevels(decoded.levels); setItems(decoded.items);
+          if (decoded.font) setCurrentFont(decoded.font);
+          if (decoded.background) setBackground(decoded.background);
+          if (decoded.appSettings) setAppSettings(decoded.appSettings);
+          return;
+        }
+      } catch (e) {}
+    } else if (safeStorage.getItem('tierListState')) {
+      try {
+        const parsed = JSON.parse(safeStorage.getItem('tierListState'));
+        setTitle(parsed.title); setAxisName(parsed.axisName || "");
+        if (parsed.titleColor) setTitleColor(parsed.titleColor);
+        if (parsed.axisColor) setAxisColor(parsed.axisColor);
+        setLevels(parsed.levels); setItems(parsed.items);
+        if (parsed.font) setCurrentFont(parsed.font);
+        if (parsed.background) setBackground(parsed.background);
+        if (parsed.appSettings) setAppSettings(parsed.appSettings);
+      } catch (e) {}
+    } else if (!isTutorialDone) {
+      startTutorial();
+    }
+    setTimeout(saveSnapshot, 500);
+  }, []);
+
+  useEffect(() => {
+    if (tutorial.active) return;
+    const timer = setTimeout(saveSnapshot, 500);
+    safeStorage.setItem('tierListState', JSON.stringify({ title, titleColor, axisName, axisColor, levels, items, background, font: currentFont }));
+    safeStorage.setItem('customTierTemplates', JSON.stringify(customTemplates));
+    safeStorage.setItem('customTierMaterials', JSON.stringify(customMaterials));
+    return () => clearTimeout(timer);
+  }, [title, titleColor, axisName, axisColor, levels, items, background, currentFont, customTemplates, customMaterials]);
+
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      isUndoRedoAction.current = true;
+      const prev = JSON.parse(history[historyIndex - 1]);
+      restoreState(prev); setHistoryIndex(historyIndex - 1); showToast("⏪ 已復原");
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      isUndoRedoAction.current = true;
+      const next = JSON.parse(history[historyIndex + 1]);
+      restoreState(next); setHistoryIndex(historyIndex + 1); showToast("⏩ 已重做");
+    }
+  };
+
+  const restoreState = (state) => {
+    setTitle(state.title); setAxisName(state.axisName); setLevels(state.levels); 
+    if (state.titleColor) setTitleColor(state.titleColor); if (state.axisColor) setAxisColor(state.axisColor);
+    setItems(state.items); setBackground(state.background || '#1a1a1a'); setCurrentFont(state.font || FONTS[0].id);
+    if (state.appSettings) setAppSettings(state.appSettings);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
+        setShowShortcuts(prev => !prev);
+        return;
+      }
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'z') { e.preventDefault(); handleUndo(); }
+        if (e.key === 'y') { e.preventDefault(); handleRedo(); }
+        if (e.key === 's') { 
+            e.preventDefault(); 
+            if (boardRef.current) exportAsImage(); 
+        }
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedIds.length > 0) { e.preventDefault(); setConfirmAction({ isOpen: true, type: 'items', id: null }); }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [history, historyIndex, selectedIds, title, titleColor, axisName, axisColor, levels, items, background, currentFont, appSettings]);
+
+  useEffect(() => {
+    const clickOutside = (e) => {
+      if (fontMenuRef.current && !fontMenuRef.current.contains(e.target)) setShowFontMenu(false);
+      if (settingsMenuRef.current && !settingsMenuRef.current.contains(e.target)) setShowSettingsMenu(false);
+    };
+    document.addEventListener('mousedown', clickOutside);
+    return () => document.removeEventListener('mousedown', clickOutside);
+  }, []);
+
+  const showToast = (msg) => { setToastMessage(msg); setTimeout(() => setToastMessage(""), 3000); };
+
+  // ==========================================
+  // 🛡️ 四層備援圖片代理 (Proxy Fallback)
+  // ==========================================
+  const fetchImageWithProxy = async (url) => {
+    const proxies = [
+      `https://api.allorigins.win/raw?url=`,
+      `https://corsproxy.io/?url=`,
+      `https://api.codetabs.com/v1/proxy?quest=`,
+      `https://thingproxy.freeboard.io/fetch/`
+    ];
+    for (let proxy of proxies) {
+      try {
+        const res = await fetch(`${proxy}${encodeURIComponent(url)}`);
+        if (res.ok) {
+          const blob = await res.blob();
+          if (blob.size > 0) return blob;
+        }
+      } catch (err) { console.warn(`Proxy failed: ${proxy}`, err); }
+    }
+    throw new Error("All proxies failed");
+  };
+
+  const processImageUrl = async (url, itemId) => {
+    if (url.startsWith('http') && !url.startsWith('data:')) {
+      showToast("🔄 正在透過安全代理載入圖片...");
+      try {
+        const blob = await fetchImageWithProxy(url);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setItems(prev => prev.map(item => item.id === itemId ? { ...item, image: reader.result } : item));
+          showToast("✅ 外部圖片成功解析！");
+        };
+        reader.readAsDataURL(blob);
+      } catch (err) {
+        showToast("⚠️ 解析失敗，將使用原始網址 (若無法匯出請下載後上傳)");
+        setItems(prev => prev.map(item => item.id === itemId ? { ...item, image: url } : item));
+      }
+    } else {
+      setItems(prev => prev.map(item => item.id === itemId ? { ...item, image: url } : item));
+    }
+  };
+
+  // ==========================================
+  // 🎨 批次操作與檔案處理
+  // ==========================================
+  const toggleSelectCard = (id, e) => {
+    if (e.target.closest('.action-btn-group')) return;
+    if (e.ctrlKey || e.metaKey || appSettings.isMultiSelectMode) {
+      setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+    } else {
+      setSelectedIds(prev => prev.length === 1 && prev[0] === id ? [] : [id]);
+    }
+    if (tutorial.active && tutorial.step === 2 && id === 'tut-item-1') nextTutorialStep();
+  };
+
+  const handleDragStart = (e, id) => { 
+    setDraggedItemId(id); e.dataTransfer.effectAllowed = "move"; 
+    if (!selectedIds.includes(id)) setSelectedIds([id]); 
+  };
+  
+  const handleDrop = (e, targetLevelId) => { 
+    e.preventDefault(); if (!draggedItemId) return; 
+    const idsToMove = selectedIds.includes(draggedItemId) ? selectedIds : [draggedItemId];
+    setItems(prev => prev.map(item => idsToMove.includes(item.id) ? { ...item, levelId: targetLevelId } : item));
+    
+    if (tutorial.active && tutorial.step === 3 && idsToMove.includes('tut-item-1') && targetLevelId === levels[0].id) {
+      setTimeout(() => nextTutorialStep(), 300);
+    }
+    setDraggedItemId(null); 
+    setSelectedIds([]); // ✅ 清除選取狀態
+    if (idsToMove.length > 1) showToast(`✅ 批次移動了 ${idsToMove.length} 張卡片`);
+  };
+
+  const handleDragOver = (e) => { 
+    e.preventDefault(); e.dataTransfer.dropEffect = "move"; 
+  };
+
+  const handleZoneClick = (targetLevelId) => { 
+    if (selectedIds.length > 0) { 
+      setItems(prev => prev.map(item => selectedIds.includes(item.id) ? { ...item, levelId: targetLevelId } : item));
+      if (tutorial.active && tutorial.step === 3 && selectedIds.includes('tut-item-1') && targetLevelId === levels[0].id) {
+        setTimeout(() => nextTutorialStep(), 300);
+      }
+      setSelectedIds([]); 
+    } 
+  };
+
+  const addNewItem = (e) => { 
+    e.preventDefault(); 
+    if (!newItemText.trim()) return; 
+    setItems(prev => [...prev, { id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, text: newItemText.trim(), image: "", levelId: null, rotate: 0, scale: 1 }]); 
+    setNewItemText(""); 
+  };
+
+  const handleBatchImport = (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    showToast(`🔄 正在處理 ${files.length} 張圖片...`);
+    setImportProgress(1); // 啟動進度條
+    
+    let processed = 0; const newItems = [];
+    
+    // 分批處理避免凍結 UI
+    const processNext = (index) => {
+      if (index >= files.length) {
+        setItems(prev => [...prev, ...newItems]);
+        setImportProgress(0); // 隱藏進度條
+        showToast(`✅ 成功匯入 ${files.length} 張卡片！`);
+        return;
+      }
+      const file = files[index];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let { width, height } = img; const MAX = 250;
+          if (width > height) { if (width > MAX) { height *= MAX / width; width = MAX; } } 
+          else { if (height > MAX) { width *= MAX / height; height = MAX; } }
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          
+          newItems.push({
+            id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            text: file.name.split('.')[0],
+            image: canvas.toDataURL('image/webp', 0.7),
+            levelId: null, rotate: 0, scale: 1
+          });
+          
+          setImportProgress(Math.floor(((index + 1) / files.length) * 100));
+          setTimeout(() => processNext(index + 1), 10); // 短暫延遲
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    };
+    
+    processNext(0);
+    e.target.value = null;
+  };
+
+  // ==========================================
+  // 📦 一鍵打包與計分版相關
+  // ==========================================
+  const loadTemplate = (tpl) => { 
+    setTitle(tpl.title); setAxisName(tpl.axisName || ""); 
+    setTitleColor(tpl.titleColor || '#ffffff'); setAxisColor(tpl.axisColor || '#e5e7eb');
+    setLevels(tpl.levels); setItems([]); 
+    setShowTemplates(false); setSelectedIds([]); 
+  };
+
+  const exportFullProject = () => {
+    const project = { type: 'tier-maker-project', title, titleColor, axisName, axisColor, levels, items, background, font: currentFont, settings: appSettings, timestamp: Date.now() };
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(project, null, 2));
+    const link = document.createElement('a'); link.href = dataStr; link.download = `${title || '專案'}.json`; link.click();
+    showToast("✅ 完整專案已匯出！"); setShowSettingsMenu(false);
+  };
+
+  const importFullProject = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+        if (data.type === 'tier-maker-project' || (data.levels && data.items)) {
+          setTitle(data.title || ""); setAxisName(data.axisName || ""); 
+          if (data.titleColor) setTitleColor(data.titleColor); if (data.axisColor) setAxisColor(data.axisColor);
+          setLevels(data.levels); setItems(data.items);
+          if (data.font) setCurrentFont(data.font); if (data.background) setBackground(data.background);
+          if (data.settings) setAppSettings(data.settings);
+          showToast("✅ 專案載入成功！");
+          setShowSettingsMenu(false);
+        } else {
+          showToast("❌ 檔案格式不支援");
+        }
+      } catch (err) {
+        showToast("❌ 載入失敗，檔案可能損毀");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = null; // reset input
+  };
+
+  const exportAsImage = async () => {
+    if (!boardRef.current) return;
+    showToast("📸 圖片產生中，請稍候...");
+    const originalScrollY = window.scrollY; window.scrollTo(0, 0); setSelectedIds([]);
+    try {
+      if (!window.htmlToImage) {
+        await new Promise((res, rej) => { const script = document.createElement('script'); script.src = 'https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js'; script.onload = res; script.onerror = rej; document.head.appendChild(script); });
+      }
+      await document.fonts.ready; await new Promise(r => setTimeout(r, 150));
+      
+      const method = appSettings.exportFormat === 'jpeg' ? 'toJpeg' : 'toPng';
+      const dataUrl = await window.htmlToImage[method](boardRef.current, { 
+        backgroundColor: background.startsWith('http') ? '#1a1a1a' : background, // 修正透明背景問題
+        pixelRatio: appSettings.exportRatio, 
+        cacheBust: true, 
+        useCORS: true,
+        quality: 0.95
+      });
+      
+      if (appSettings.skipExportPreview) {
+          const link = document.createElement('a'); 
+          link.download = `${title || 'tier-list'}.${appSettings.exportFormat === 'jpeg' ? 'jpg' : 'png'}`; 
+          link.href = dataUrl; link.click();
+          showToast("✅ 下載完成！");
+      } else {
+          setExportPreview(dataUrl);
+      }
+    } catch (error) { showToast("❌ 匯出失敗，請檢查背景圖片是否支援跨域存取 (CORS)，或改用純色背景。"); } 
+    finally { window.scrollTo(0, originalScrollY); }
+  };
+
+  const getMiniQR = () => {
+    if (!window.qrcode) return null;
+    try {
+        const stateJson = JSON.stringify({ title, levels, items }); // 最小化 Payload 避免 QR 過密
+        const url = stateJson.length > 2000 ? window.location.href.split('#')[0] : `${window.location.href.split('#')[0]}#${btoa(encodeURIComponent(stateJson))}`;
+        const qr = window.qrcode(0, 'L');
+        qr.addData(url);
+        qr.make();
+        return qr.createDataURL(2, 0);
+    } catch (e) { return null; }
+  };
+
+  const showQRCode = () => {
+    const stateJson = JSON.stringify({ title, titleColor, axisName, axisColor, levels, items, background, font: currentFont, appSettings });
+    if (stateJson.length > 2000) {
+      setInputDialog({ isOpen: true, type: 'qrFallback', value: '' });
+      setShowSettingsMenu(false);
+      return;
+    }
+    const url = `${window.location.origin}${window.location.pathname}#${btoa(encodeURIComponent(stateJson))}`;
+    
+    if (window.qrcode) {
+      const qr = window.qrcode(0, 'L');
+      qr.addData(url);
+      qr.make();
+      setInputDialog({ isOpen: true, type: 'qr', value: qr.createDataURL(4, 0) });
+    } else {
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(url)}`;
+      setInputDialog({ isOpen: true, type: 'qr', value: qrUrl });
+    }
+    setShowSettingsMenu(false);
+  };
+
+  const sortLevelItemsAlphabetically = (levelId) => {
+    setItems(prev => {
+      const levelItems = prev.filter(i => i.levelId === levelId).sort((a, b) => a.text.localeCompare(b.text, 'zh-Hant'));
+      const otherItems = prev.filter(i => i.levelId !== levelId);
+      return [...otherItems, ...levelItems];
+    });
+    showToast("🔤 已為此階級自動排序！");
+  };
+
+  // --- 計算總戰力/分數 ---
+  const totalScore = items.reduce((sum, item) => {
+    const level = levels.find(l => l.id === item.levelId);
+    return sum + (level?.score || 0);
+  }, 0);
+
+  // --- 統一自訂對話框邏輯 ---
+  const openCardTransformDialog = (item) => setInputDialog({ isOpen: true, type: 'transform', itemId: item.id, value: '', options: { rotate: item.rotate || 0, scale: item.scale || 1 } });
+  
+  const submitInputDialog = () => {
+    const { type, itemId, value, options } = inputDialog;
+    setInputDialog({ isOpen: false, type: '', itemId: '', value: '', options: {} }); 
+
+    if (type === 'text') {
+      if (value.trim() !== "") setItems(prev => prev.map(item => item.id === itemId ? { ...item, text: value } : item));
+      if (tutorial.active && tutorial.step === 4) nextTutorialStep();
+    } else if (type === 'title') { 
+      setTitle(value || '未命名'); if (options.color) setTitleColor(options.color);
+    } else if (type === 'axisName') { 
+      setAxisName(value); if (options.color) setAxisColor(options.color);
+    } else if (type === 'scoreboard') {
+      setAppSettings({ ...appSettings, scoreboardName: value || '總分/戰力指數', showScoreboard: options.showScoreboard });
+    } else if (type === 'quickMove') {
+      const idsToMove = options.ids;
+      setItems(prev => prev.map(item => idsToMove.includes(item.id) ? { ...item, levelId: value } : item));
+      setSelectedIds([]);
+      showToast(`✅ 已移動 ${idsToMove.length} 張卡片`);
+    } else if (type === 'saveMaterialPack') {
+      if (!value.trim()) return showToast("❌ 請輸入素材包名稱！");
+      const newPack = { id: `mat-${Date.now()}`, name: value, items: items.map(i => ({...i, levelId: null})) };
+      setCustomMaterials([newPack, ...customMaterials]); showToast("✅ 素材包儲存成功！");
+    } else if (type === 'image') {
+      processImageUrl(value.trim(), itemId);
+      if (tutorial.active && tutorial.step === 4) nextTutorialStep();
+    } else if (type === 'transform') {
+      setItems(prev => prev.map(item => item.id === itemId ? { ...item, rotate: options.rotate, scale: options.scale } : item));
+      if (tutorial.active && tutorial.step === 4) nextTutorialStep();
+    }
+  };
+
+  const handleLocalImageUpload = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    showToast("圖片處理中...");
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width; let height = img.height; const MAX_DIMENSION = 250;
+        if (width > height) { if (width > MAX_DIMENSION) { height *= MAX_DIMENSION / width; width = MAX_DIMENSION; } } 
+        else { if (height > MAX_DIMENSION) { width *= MAX_DIMENSION / height; height = MAX_DIMENSION; } }
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
+        setInputDialog(prev => ({ ...prev, value: canvas.toDataURL('image/webp', 0.7) }));
+        showToast("✅ 圖片載入成功！");
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file); e.target.value = null; 
+  };
+
+  const updateLevel = (id, key, value) => setLevels(prev => prev.map(l => l.id === id ? { ...l, [key]: value } : l));
+  const addLevel = () => setLevels([...levels, { id: `l-${Date.now()}`, label: "新等級", color: PRESET_COLORS[0], textColor: '#111', score: 0 }]);
+  
+  const executeConfirmAction = () => {
+    if (confirmAction.type === 'items') {
+      setItems(prev => prev.filter(item => !selectedIds.includes(item.id)));
+      setSelectedIds([]);
+    } else if (confirmAction.type === 'level') {
+      setLevels(prev => prev.filter(l => l.id !== confirmAction.id));
+      setItems(prev => prev.map(item => item.levelId === confirmAction.id ? { ...item, levelId: null } : item));
+    } else if (confirmAction.type === 'template') {
+      setCustomTemplates(prev => prev.filter(t => t.id !== confirmAction.id));
+    } else if (confirmAction.type === 'materialPack') {
+      setCustomMaterials(prev => prev.filter(m => m.id !== confirmAction.id));
+    } else if (confirmAction.type === 'clearAll') {
+      localStorage.clear();
+      window.location.hash = '';
+      window.location.replace(window.location.pathname);
+    }
+    setConfirmAction({ isOpen: false, type: '', id: '' });
+  };
+
+  // --- 教學系統邏輯 ---
+  const startTutorial = () => { setShowConfirmRestart(false); restoreState(TEMPLATES[0]); setItems([...TUTORIAL_ITEMS]); window.scrollTo({ top: 0 }); setTutorial({ active: true, step: 1 }); };
+  const endTutorial = () => { setTutorial({ active: false, step: 0 }); safeStorage.setItem('tutorial_done', 'true'); setItems([]); setSelectedIds([]); showToast("教學完成！🎉"); };
+  const nextTutorialStep = () => setTutorial(prev => ({ ...prev, step: prev.step + 1 }));
+
+  const unassignedItems = items.filter(item => item.levelId === null);
+
+  // --- 動態樣式生成 (依據設定) ---
+  const getCardSizeClass = () => {
+    switch (appSettings.cardSize) {
+      case 'small': return 'w-16 h-16 sm:w-20 sm:h-20';
+      case 'large': return 'w-24 h-24 sm:w-32 sm:h-32 text-lg';
+      default: return 'w-20 h-20 sm:w-24 sm:h-24';
+    }
+  };
+
+  const getCardRadiusClass = () => {
+    switch (appSettings.cardRadius) {
+      case 'none': return 'rounded-none';
+      case 'full': return 'rounded-2xl';
+      default: return 'rounded-md';
+    }
+  };
+
+  const getLabelWidthClass = () => {
+    switch (appSettings.labelWidth) {
+      case 'narrow': return 'w-16 sm:w-20 text-xs sm:text-sm';
+      case 'wide': return 'w-28 sm:w-36 text-base sm:text-xl';
+      default: return 'w-20 sm:w-28 text-sm sm:text-lg';
+    }
+  };
+
+  const getCardTextClass = (hasImage) => {
+    if (hasImage) {
+      switch (appSettings.cardSize) {
+        case 'small': return 'text-[9px] sm:text-[10px]';
+        case 'large': return 'text-xs sm:text-sm';
+        default: return 'text-[11px] sm:text-xs';
+      }
+    } else {
+      switch (appSettings.cardSize) {
+        case 'small': return 'text-[10px] sm:text-xs';
+        case 'large': return 'text-sm sm:text-base';
+        default: return 'text-xs sm:text-sm';
+      }
+    }
+  };
+
+  // --- 繪製卡片 ---
+  const renderItem = (item) => {
+    const isSelected = selectedIds.includes(item.id);
+    const transformStyle = { transform: `rotate(${item.rotate || 0}deg) scale(${item.scale || 1})` };
+    const sizeClass = getCardSizeClass();
+    const radiusClass = getCardRadiusClass();
+    const textClass = getCardTextClass(!!item.image);
+
+    return (
+      <div
+        key={item.id} id={item.id} draggable onDragStart={(e) => handleDragStart(e, item.id)} 
+        onClick={(e) => { e.stopPropagation(); toggleSelectCard(item.id, e); }}
+        onDoubleClick={(e) => { 
+          e.stopPropagation(); 
+          setSelectedIds([]); // 清除選取，防止雙擊選取狀態卡住
+          setInputDialog({ isOpen: true, type: 'text', itemId: item.id, value: item.text, options: {} }); 
+        }}
+        className={`draggable-item relative cursor-grab active:cursor-grabbing flex-shrink-0 ${sizeClass} m-0.5 ${radiusClass} shadow border-2 transition-colors ${isSelected ? 'border-indigo-500 z-40 ring-2 ring-indigo-300' : 'border-transparent hover:border-gray-400 z-10'}`}
+        style={transformStyle}
+      >
+        <div className={`w-full h-full ${radiusClass} flex flex-col justify-center items-center overflow-hidden bg-white pointer-events-none`}>
+          {item.image ? (
+            <>
+              <img src={item.image} alt={item.text} className="w-full h-full object-cover" crossOrigin="anonymous" />
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent pt-8 pb-2.5 px-1.5 flex justify-center items-end">
+                <p className={`text-white font-bold truncate text-center drop-shadow-md leading-tight w-full ${textClass}`}>{item.text}</p>
+              </div>
+            </>
+          ) : ( <span className={`font-black text-gray-800 text-center break-words w-full px-1 leading-snug ${textClass}`}>{item.text}</span> )}
+        </div>
+        
+        {isSelected && selectedIds.length === 1 && (
+          <div className="action-btn-group absolute -top-14 left-1/2 transform -translate-x-1/2 bg-gray-900 rounded-lg shadow-xl flex items-center p-1 gap-1 z-50 whitespace-nowrap">
+            <button onPointerDown={(e) => { e.stopPropagation(); setInputDialog({ isOpen: true, type: 'text', itemId: item.id, value: item.text, options: {} }); }} className="p-2 text-white hover:bg-gray-700 rounded-md" title="修改文字"><Edit2 size={16} /></button>
+            <button onPointerDown={(e) => { e.stopPropagation(); setInputDialog({ isOpen: true, type: 'image', itemId: item.id, value: item.image, options: {} }); }} className="p-2 text-white hover:bg-gray-700 rounded-md" title="設定圖片"><ImageIcon size={16} /></button>
+            <button onPointerDown={(e) => { e.stopPropagation(); openCardTransformDialog(item); }} className="p-2 text-blue-300 hover:bg-blue-900 rounded-md" title="變形/旋轉"><Maximize2 size={16} /></button>
+            <button onPointerDown={(e) => { e.stopPropagation(); setInputDialog({ isOpen: true, type: 'quickMove', value: levels[0]?.id, options: { ids: [item.id] } }); }} className="p-2 text-green-400 hover:bg-green-900 rounded-md" title="快速移動至階級"><MoveRight size={16} /></button>
+            {item.levelId !== null && ( <button onPointerDown={(e) => { e.stopPropagation(); setItems(prev => prev.map(i => i.id === item.id ? { ...i, levelId: null } : i)); setSelectedIds([]); }} className="p-2 text-yellow-400 hover:bg-yellow-900 rounded-md" title="移回素材區"><RotateCcw size={16} /></button> )}
+            <button onPointerDown={(e) => { e.stopPropagation(); setConfirmAction({ isOpen: true, type: 'items', id: null }); }} className="p-2 text-red-400 hover:bg-red-900 rounded-md" title="刪除"><Trash2 size={16} /></button>
+            <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent border-t-gray-900"></div>
+          </div>
+        )}
+        
+        {isSelected && selectedIds.length > 1 && (
+          <div className="absolute top-1 right-1 bg-indigo-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold z-40 border-2 border-white shadow">✓</div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="app-container min-h-screen text-gray-900 flex flex-col pb-24 sm:pb-0 transition-colors duration-300" style={{ background: background.startsWith('http') ? '#f3f4f6' : (background === '#1a1a1a' ? '#f3f4f6' : background) }}>
+      {/* 頂部 Header */}
+      <header className="bg-white/95 backdrop-blur border-b border-gray-200 sticky top-0 z-40 px-4 py-3 shadow-sm font-sans">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="bg-gray-900 text-yellow-400 p-2 rounded-xl shadow-inner border border-gray-700 flex-shrink-0"><LayoutTemplate size={24} /></div>
+            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="text-xl sm:text-2xl font-black bg-transparent border-none focus:ring-0 p-0 text-gray-900 w-full hover:bg-gray-50 rounded px-2 py-1 transition-colors app-container" placeholder="輸入評比主題..." />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+            <div className="flex flex-wrap gap-2 items-center">
+              
+              {lastSaved && <div className="text-xs text-gray-400 hidden lg:flex items-center gap-1 font-bold mr-2"><Clock size={12}/> {lastSaved} 自動儲存</div>}
+              
+              <button onClick={() => setAppSettings({...appSettings, isMultiSelectMode: !appSettings.isMultiSelectMode})} className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-lg shadow-sm transition-colors ${appSettings.isMultiSelectMode ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`} title="手機友善的點擊多選模式"><CheckSquare size={16}/> 多選</button>
+
+              {/* 復原/重做 */}
+              <div className="flex bg-gray-100 rounded-lg overflow-hidden border border-gray-200 shadow-sm mr-1">
+                <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-1.5 px-2 text-gray-600 hover:bg-gray-200 disabled:opacity-30"><Undo2 size={16}/></button>
+                <div className="w-px bg-gray-300"></div>
+                <button onClick={handleRedo} disabled={historyIndex >= history.length - 1} className="p-1.5 px-2 text-gray-600 hover:bg-gray-200 disabled:opacity-30"><Redo2 size={16}/></button>
+              </div>
+
+              {/* 快捷鍵說明 */}
+              <button onClick={() => setShowShortcuts(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 whitespace-nowrap shadow-sm"><HelpCircle size={16} /> 快捷鍵</button>
+
+              {/* 字體切換下拉選單 */}
+              <div className="relative" ref={fontMenuRef}>
+                <button onClick={() => setShowFontMenu(!showFontMenu)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 whitespace-nowrap shadow-sm"><Type size={16} /> 字體</button>
+                {showFontMenu && (
+                  <div className="absolute right-0 sm:left-0 sm:right-auto top-full mt-2 bg-white border border-gray-200 shadow-xl rounded-xl overflow-hidden w-[320px] max-h-[60vh] overflow-y-auto z-50 ring-1 ring-black ring-opacity-5 grid grid-cols-2 p-2 gap-1">
+                    {FONTS.map(f => (
+                      <button key={f.id} onClick={() => { setCurrentFont(f.id); setShowFontMenu(false); }} className={`block w-full text-left px-3 py-2 text-[13px] rounded hover:bg-indigo-50 ${currentFont === f.id ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-gray-700'} ${f.id}`}>
+                        {f.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 設定與進階選單 */}
+              <div className="relative" ref={settingsMenuRef}>
+                <button onClick={() => setShowSettingsMenu(!showSettingsMenu)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 whitespace-nowrap shadow-sm"><Settings size={16} /> 專案</button>
+                {showSettingsMenu && (
+                  <div className="absolute right-0 top-full mt-2 bg-white border border-gray-200 shadow-xl rounded-xl overflow-hidden w-56 z-50 p-2 flex flex-col gap-1">
+                    <button onClick={() => {setShowSettingsMenu(false); setShowTemplates(true);}} className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded font-bold"><LayoutTemplate size={16} /> 套用內建模板</button>
+                    <button onClick={showQRCode} className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded font-bold"><QrCode size={16} /> 生成分享 QR Code</button>
+                    <div className="h-px bg-gray-200 my-1"></div>
+                    <button onClick={() => {setShowSettingsMenu(false); setShowSettingsPanel(true);}} className="flex items-center gap-2 px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50 rounded font-bold"><SlidersHorizontal size={16} /> 全域進階設定 ⚙️</button>
+                    <div className="h-px bg-gray-200 my-1"></div>
+                    <button onClick={exportFullProject} className="flex items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded font-bold"><PackageCheck size={16} /> 一鍵打包專案 (.json)</button>
+                    <label className="flex items-center gap-2 px-3 py-2 text-sm text-green-600 hover:bg-green-50 rounded font-bold cursor-pointer">
+                      <PackageOpen size={16} /> 載入專案檔 <input type="file" accept=".json" onChange={importFullProject} className="hidden" />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <button id="export-btn" onClick={exportAsImage} className={`flex items-center gap-1.5 px-4 py-1.5 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 whitespace-nowrap shadow-sm ${tutorial.active && tutorial.step === 5 ? 'z-[60] relative ring-4 ring-yellow-400' : ''}`}><Download size={16} /> 儲存大圖</button>
+            </div>
+            <button onClick={tutorial.active ? endTutorial : () => setShowConfirmRestart(true)} className="p-2 text-gray-500 hover:text-yellow-500 hover:bg-yellow-50 rounded-full ml-1"><Info size={20} /></button>
+          </div>
+        </div>
+      </header>
+
+      {/* 全域設定面板 Modal */}
+      {showSettingsPanel && (
+        <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 backdrop-blur-sm font-sans">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden border border-gray-200">
+            <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center sticky top-0 z-10">
+              <h3 className="font-black text-xl text-gray-800 flex items-center gap-2"><SlidersHorizontal className="text-indigo-600"/> 全域進階設定</h3>
+              <button onClick={() => setShowSettingsPanel(false)} className="text-gray-500 hover:bg-gray-200 p-1.5 rounded-full transition-colors"><X size={24} /></button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto bg-white flex flex-col gap-8">
+              {/* 視覺設定區塊 */}
+              <section>
+                <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2 border-b pb-2"><Palette size={18} className="text-gray-500"/> 視覺與排版</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">卡片大小</label>
+                    <select value={appSettings.cardSize} onChange={e => setAppSettings({...appSettings, cardSize: e.target.value})} className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 focus:ring-indigo-500">
+                      <option value="small">小 (適合大量卡片)</option>
+                      <option value="medium">中 (預設)</option>
+                      <option value="large">大 (高畫質展示)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">卡片圓角</label>
+                    <select value={appSettings.cardRadius} onChange={e => setAppSettings({...appSettings, cardRadius: e.target.value})} className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 focus:ring-indigo-500">
+                      <option value="none">直角 (俐落)</option>
+                      <option value="md">微圓 (預設)</option>
+                      <option value="full">圓潤 (可愛)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">階級標籤寬度</label>
+                    <select value={appSettings.labelWidth} onChange={e => setAppSettings({...appSettings, labelWidth: e.target.value})} className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 focus:ring-indigo-500">
+                      <option value="narrow">窄版</option>
+                      <option value="standard">標準 (預設)</option>
+                      <option value="wide">寬版 (適合長文)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">排版佈局方向</label>
+                    <select value={appSettings.layoutReversed ? 'right' : 'left'} onChange={e => setAppSettings({...appSettings, layoutReversed: e.target.value === 'right'})} className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 focus:ring-indigo-500">
+                      <option value="left">素材區在左側 (預設)</option>
+                      <option value="right">素材區在右側</option>
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="flex justify-between items-center text-sm font-bold text-gray-700 mb-2">
+                      自動白/黑字閾值 (目前: {appSettings.contrastThreshold})
+                      <span className="text-xs text-gray-500 font-normal ml-2">向左:更容易出現白字 / 向右:更容易出現黑字</span>
+                    </label>
+                    <input type="range" min="0" max="255" value={appSettings.contrastThreshold} onChange={e => setAppSettings({...appSettings, contrastThreshold: Number(e.target.value)})} className="w-full accent-indigo-600" />
+                  </div>
+                  <div className="sm:col-span-2 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                    <h5 className="font-bold text-gray-800 mb-3 text-sm flex items-center gap-2"><ImageIcon size={16}/> 背景圖片進階設定</h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2">圖片尺寸模式</label>
+                        <select value={appSettings.bgSize} onChange={e => setAppSettings({...appSettings, bgSize: e.target.value})} className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2 focus:ring-indigo-500">
+                          <option value="cover">自動填滿 (Cover)</option>
+                          <option value="contain">等比縮放 (Contain)</option>
+                          <option value="auto">原始大小 (Auto)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="flex justify-between items-center text-sm font-bold text-gray-700 mb-2">
+                          圖片暗化遮罩 (提升文字可讀性)
+                        </label>
+                        <input type="range" min="0" max="0.9" step="0.1" value={appSettings.bgOverlay} onChange={e => setAppSettings({...appSettings, bgOverlay: Number(e.target.value)})} className="w-full accent-indigo-600" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="sm:col-span-2 flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200 mt-2">
+                    <input type="checkbox" id="toggleScoreboard" checked={appSettings.showScoreboard} onChange={e => setAppSettings({...appSettings, showScoreboard: e.target.checked})} className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" />
+                    <label htmlFor="toggleScoreboard" className="font-bold text-gray-700 cursor-pointer select-none">啟用總戰力計分板顯示 (有分數時自動顯示)</label>
+                  </div>
+                </div>
+              </section>
+
+              {/* 匯出設定區塊 */}
+              <section>
+                <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2 border-b pb-2"><Download size={18} className="text-gray-500"/> 匯出與儲存</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">歷史紀錄上限 (Undo 步數)</label>
+                    <input type="number" min="10" max="100" value={appSettings.historyLimit} onChange={e => setAppSettings({...appSettings, historyLimit: Number(e.target.value)})} className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 focus:ring-indigo-500" />
+                  </div>
+                  <div className="sm:col-span-2 p-4 bg-gray-100 rounded-xl border border-gray-300 flex items-center justify-center gap-4 mt-2">
+                    <div className="text-sm font-bold text-gray-500">卡片預覽：</div>
+                    <div className={`bg-white shadow border-2 border-indigo-400 flex items-center justify-center transition-all ${appSettings.cardSize === 'small' ? 'w-16 h-16' : appSettings.cardSize === 'large' ? 'w-24 h-24' : 'w-20 h-20'} ${appSettings.cardRadius === 'none' ? 'rounded-none' : appSettings.cardRadius === 'full' ? 'rounded-2xl' : 'rounded-md'}`}>
+                       <span className={`font-black text-gray-800 ${appSettings.cardSize === 'small' ? 'text-[10px]' : appSettings.cardSize === 'large' ? 'text-sm' : 'text-xs'}`}>文字預覽</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">大圖匯出格式</label>
+                    <select value={appSettings.exportFormat} onChange={e => setAppSettings({...appSettings, exportFormat: e.target.value})} className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 focus:ring-indigo-500">
+                      <option value="png">PNG (高畫質無損, 預設)</option>
+                      <option value="jpeg">JPEG (檔案較小)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">大圖畫質倍率</label>
+                    <select value={appSettings.exportRatio} onChange={e => setAppSettings({...appSettings, exportRatio: Number(e.target.value)})} className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 focus:ring-indigo-500">
+                      <option value="1">1x (輕量快速)</option>
+                      <option value="2">2x (清晰標準, 預設)</option>
+                      <option value="3">3x (極致超清)</option>
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2 flex flex-col gap-3 bg-gray-50 p-4 rounded-xl border border-gray-200 mt-2">
+                    <div className="flex items-center gap-3">
+                      <input type="checkbox" id="skipPreview" checked={appSettings.skipExportPreview} onChange={e => setAppSettings({...appSettings, skipExportPreview: e.target.checked})} className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" />
+                      <label htmlFor="skipPreview" className="font-bold text-gray-700 cursor-pointer select-none">略過匯出預覽 (點擊直接下載大圖)</label>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input type="checkbox" id="embedQR" checked={appSettings.embedQR} onChange={e => setAppSettings({...appSettings, embedQR: e.target.checked})} className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" />
+                      <label htmlFor="embedQR" className="font-bold text-gray-700 cursor-pointer select-none">匯出圖片時在右下角內嵌專屬 QR Code</label>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* 危險操作區塊 */}
+              <section>
+                <h4 className="font-bold text-red-600 mb-4 flex items-center gap-2 border-b border-red-200 pb-2"><AlertOctagon size={18}/> 危險操作</h4>
+                <div className="bg-red-50 p-4 rounded-xl border border-red-200">
+                  <p className="text-sm text-red-700 font-bold mb-3">這將會清除您在瀏覽器上的所有評比資料、自訂模板與素材包，恢復到初始狀態。</p>
+                  <button onClick={() => setConfirmAction({ isOpen: true, type: 'clearAll', id: null })} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-colors">
+                    重置所有資料
+                  </button>
+                </div>
+              </section>
+            </div>
+            <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end">
+              <button onClick={() => setShowSettingsPanel(false)} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-xl shadow-md transition-colors">完成設定</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 批次操作浮動列 */}
+      {selectedIds.length > 1 && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl z-50 flex items-center gap-4 font-sans border border-gray-700 animate-bounce-short">
+          <span className="font-bold text-yellow-400">已選 {selectedIds.length} 張</span>
+          <div className="w-px h-5 bg-gray-600"></div>
+          <button onClick={() => setInputDialog({ isOpen: true, type: 'quickMove', value: levels[0]?.id, options: { ids: selectedIds } })} className="flex items-center gap-1 text-green-400 hover:text-green-300 transition-colors"><MoveRight size={16}/> 移動至</button>
+          <button onClick={() => setItems(prev => prev.map(i => selectedIds.includes(i.id) ? { ...i, levelId: null } : i))} className="flex items-center gap-1 hover:text-yellow-300 transition-colors"><RotateCcw size={16}/> 移回素材</button>
+          <button onClick={() => setConfirmAction({ isOpen: true, type: 'items', id: null })} className="flex items-center gap-1 hover:text-red-400 transition-colors"><Trash2 size={16}/> 刪除</button>
+          <button onClick={() => setSelectedIds([])} className="ml-2 bg-gray-700 hover:bg-gray-600 rounded-full p-1"><X size={16}/></button>
+        </div>
+      )}
+
+      {/* 統一輸入框對話框 */}
+      {inputDialog.isOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm font-sans">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center transform transition-all">
+            <h3 className="font-black text-xl mb-4 text-gray-900 flex justify-center items-center gap-2">
+              {inputDialog.type === 'image' && <><ImageIcon className="text-indigo-500"/> 設定圖片</>}
+              {inputDialog.type === 'text' && <><Edit2 className="text-indigo-500"/> 修改文字</>}
+              {inputDialog.type === 'title' && <><Edit2 className="text-indigo-500"/> 編輯大標題與顏色</>}
+              {inputDialog.type === 'axisName' && <><Edit2 className="text-indigo-500"/> 編輯副標題與顏色</>}
+              {inputDialog.type === 'saveMaterialPack' && <><Save className="text-indigo-500"/> 儲存素材包</>}
+              {inputDialog.type === 'transform' && <><Maximize2 className="text-indigo-500"/> 卡片排版微調</>}
+              {inputDialog.type === 'scoreboard' && <><Settings className="text-indigo-500"/> 戰力指數設定</>}
+              {inputDialog.type === 'quickMove' && <><MoveRight className="text-indigo-500"/> 快速移動至階級</>}
+              {inputDialog.type === 'qr' && <><QrCode className="text-indigo-500"/> 掃碼分享</>}
+              {inputDialog.type === 'qrFallback' && <><AlertOctagon className="text-yellow-500"/> 資料量過大</>}
+            </h3>
+            
+            {inputDialog.type === 'qrFallback' ? (
+              <div className="flex flex-col items-center gap-4 mb-6">
+                <p className="text-sm text-gray-600 font-bold">目前卡片資料量超過 QR Code 限制，無法產生圖片條碼。</p>
+                <button onClick={() => { setInputDialog({isOpen:false}); exportFullProject(); }} className="w-full py-3 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors"><PackageCheck size={18}/> 建議改用「一鍵打包專案」分享</button>
+              </div>
+            ) : inputDialog.type === 'qr' ? (
+              <div className="flex flex-col items-center gap-4 mb-6">
+                <img src={inputDialog.value} alt="QR Code" className="w-48 h-48 border-4 border-white shadow-md rounded-xl" />
+                <p className="text-sm text-gray-500 font-bold">請朋友掃描即可一起編輯！</p>
+              </div>
+            ) : inputDialog.type === 'quickMove' ? (
+              <div className="flex flex-col gap-4 mb-6 text-left">
+                <p className="text-sm text-gray-600 font-bold">請選擇要移動到的目標：</p>
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                  <button onClick={() => setInputDialog({...inputDialog, value: null})} className={`p-2 border-2 rounded-lg font-bold text-sm transition-all ${inputDialog.value === null ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>📦 移回素材區</button>
+                  {levels.map(l => (
+                    <button key={l.id} onClick={() => setInputDialog({...inputDialog, value: l.id})} className={`p-2 border-2 rounded-lg font-bold text-sm transition-all ${inputDialog.value === l.id ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                      <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{backgroundColor: l.color}}></span>{l.label}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : inputDialog.type === 'scoreboard' ? (
+              <div className="flex flex-col gap-4 mb-6 text-left">
+                <p className="text-sm text-gray-600 font-bold">您可以自訂計分板名稱，並在各階級設定中分配「PT」分數。</p>
+                <div>
+                  <label className="text-xs text-gray-500 font-bold">計分板顯示名稱</label>
+                  <input type="text" value={inputDialog.value} onChange={(e) => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder="例如：戰力指數、總分..." className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm font-bold rounded-lg px-3 py-2 mt-1 focus:ring-2 focus:ring-indigo-500" />
+                </div>
+                <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200 mt-2">
+                  <input type="checkbox" id="modalToggleScoreboard" checked={inputDialog.options.showScoreboard !== false} onChange={e => setInputDialog({...inputDialog, options: {...inputDialog.options, showScoreboard: e.target.checked}})} className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" />
+                  <label htmlFor="modalToggleScoreboard" className="font-bold text-gray-700 cursor-pointer select-none">啟用總戰力計分板</label>
+                </div>
+              </div>
+            ) : inputDialog.type === 'transform' ? (
+              <div className="flex flex-col gap-4 mb-6 text-left">
+                <div>
+                  <label className="text-sm font-bold text-gray-700 flex justify-between">旋轉角度 <span>{inputDialog.options.rotate}°</span></label>
+                  <input type="range" min="-45" max="45" value={inputDialog.options.rotate} onChange={(e) => setInputDialog(p => ({...p, options: {...p.options, rotate: Number(e.target.value)}}))} className="w-full accent-indigo-600" />
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-gray-700 flex justify-between">縮放比例 <span>{inputDialog.options.scale}x</span></label>
+                  <input type="range" min="0.5" max="1.5" step="0.1" value={inputDialog.options.scale} onChange={(e) => setInputDialog(p => ({...p, options: {...p.options, scale: Number(e.target.value)}}))} className="w-full accent-indigo-600" />
+                </div>
+                <div className="flex justify-center mt-2">
+                  <div className="w-20 h-20 bg-gray-100 border-2 border-indigo-400 rounded-lg flex items-center justify-center font-black" style={{ transform: `rotate(${inputDialog.options.rotate}deg) scale(${inputDialog.options.scale})` }}>預覽</div>
+                </div>
+              </div>
+            ) : inputDialog.type === 'image' ? (
+              <div className="flex flex-col gap-3 mb-6 text-left">
+                {inputDialog.value && <div className="flex justify-center mb-2"><img src={inputDialog.value} alt="preview" className="w-20 h-20 object-cover rounded-lg border border-gray-200 shadow-sm" /></div>}
+                <label className="w-full bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-sm font-bold rounded-lg px-3 py-3 cursor-pointer flex items-center justify-center gap-2 transition-colors">
+                  <Upload size={18} /> 從手機/電腦上傳圖片 <input type="file" accept="image/*" onChange={handleLocalImageUpload} className="hidden" />
+                </label>
+                <div className="flex items-center gap-2 my-1"><div className="h-px bg-gray-200 flex-1"></div><span className="text-xs text-gray-400 font-bold">或者</span><div className="h-px bg-gray-200 flex-1"></div></div>
+                <input type="text" value={inputDialog.value} onChange={(e) => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder="貼上網路圖片網址 (自動解鎖跨域)" className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg px-3 py-3 focus:ring-2 focus:ring-indigo-500" onKeyDown={(e) => e.key === 'Enter' && submitInputDialog()} />
+              </div>
+            ) : inputDialog.type === 'title' || inputDialog.type === 'axisName' ? (
+              <div className="flex gap-3 mb-6">
+                <input type="text" autoFocus value={inputDialog.value} onChange={(e) => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder="請輸入..." className="flex-1 bg-gray-50 border border-gray-300 text-gray-900 text-sm font-bold rounded-lg px-3 py-3 focus:ring-2 focus:ring-indigo-500" onKeyDown={(e) => e.key === 'Enter' && submitInputDialog()} />
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-[10px] text-gray-500 font-bold">文字顏色</span>
+                  <input type="color" value={inputDialog.options.color || '#ffffff'} onChange={(e) => setInputDialog({...inputDialog, options: {...inputDialog.options, color: e.target.value}})} className="w-10 h-10 p-0.5 border border-gray-300 rounded cursor-pointer" />
+                </div>
+              </div>
+            ) : (
+              <input type="text" autoFocus value={inputDialog.value} onChange={(e) => setInputDialog({ ...inputDialog, value: e.target.value })} placeholder="請輸入..." className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm font-bold rounded-lg px-3 py-3 mb-6 focus:ring-2 focus:ring-indigo-500" onKeyDown={(e) => e.key === 'Enter' && submitInputDialog()} />
+            )}
+
+            <div className="flex gap-3 justify-center">
+              {inputDialog.type !== 'qr' && inputDialog.type !== 'qrFallback' && <button onClick={() => setInputDialog({ isOpen: false, type: '', itemId: '', value: '', options: {} })} className="px-4 py-2 rounded-lg font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 w-full">取消</button>}
+              {inputDialog.type !== 'qrFallback' && <button onClick={inputDialog.type === 'qr' ? () => setInputDialog({isOpen:false, type:''}) : submitInputDialog} className="px-4 py-2 rounded-lg font-bold text-white bg-gray-900 hover:bg-black w-full">確定</button>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 匯出預覽 Modal */}
+      {exportPreview && (
+        <div className="fixed inset-0 bg-black/90 z-[120] flex items-center justify-center p-4 backdrop-blur-md font-sans">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+              <h3 className="font-black text-xl text-gray-800 flex items-center gap-2"><ImageIcon className="text-indigo-600"/> 匯出預覽</h3>
+              <button onClick={() => setExportPreview(null)} className="text-gray-500 hover:bg-gray-200 p-1.5 rounded-full transition-colors"><X size={24} /></button>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-200 p-4 flex justify-center items-center custom-scrollbar">
+              <img src={exportPreview} alt="Export Preview" className="max-w-full h-auto shadow-lg border border-gray-300" />
+            </div>
+            <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+              <button onClick={() => setExportPreview(null)} className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-gray-200 hover:bg-gray-300 transition-colors">返回修改</button>
+              <a href={exportPreview} download={`${title || 'tier-list'}.${appSettings.exportFormat === 'jpeg' ? 'jpg' : 'png'}`} onClick={() => setExportPreview(null)} className="px-5 py-2.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 shadow-md flex items-center gap-2 transition-colors"><Download size={18}/> 確認下載大圖</a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 快捷鍵 Modal */}
+      {showShortcuts && (
+        <div className="fixed inset-0 bg-black/80 z-[120] flex items-center justify-center p-4 backdrop-blur-sm font-sans">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 border border-gray-200">
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="font-black text-xl text-gray-900">⌨️ 鍵盤快捷鍵</h3>
+                <button onClick={() => setShowShortcuts(false)} className="text-gray-500 hover:bg-gray-200 p-1.5 rounded-full"><X size={20} /></button>
+            </div>
+            <ul className="space-y-3 text-sm font-bold text-gray-700">
+                <li className="flex justify-between border-b pb-2"><span>復原上一步</span> <kbd className="bg-gray-100 px-2 py-1 rounded border shadow-sm">Ctrl + Z</kbd></li>
+                <li className="flex justify-between border-b pb-2"><span>重做</span> <kbd className="bg-gray-100 px-2 py-1 rounded border shadow-sm">Ctrl + Y</kbd></li>
+                <li className="flex justify-between border-b pb-2"><span>快速儲存大圖</span> <kbd className="bg-gray-100 px-2 py-1 rounded border shadow-sm">Ctrl + S</kbd></li>
+                <li className="flex justify-between border-b pb-2"><span>刪除選取卡片</span> <div><kbd className="bg-gray-100 px-2 py-1 rounded border shadow-sm">Delete</kbd> / <kbd className="bg-gray-100 px-2 py-1 rounded border shadow-sm">Backspace</kbd></div></li>
+                <li className="flex justify-between border-b pb-2"><span>多選卡片</span> <div><kbd className="bg-gray-100 px-2 py-1 rounded border shadow-sm">Ctrl</kbd> + 點擊</div></li>
+                <li className="flex justify-between pb-2"><span>開啟此快捷鍵清單</span> <kbd className="bg-gray-100 px-2 py-1 rounded border shadow-sm">?</kbd></li>
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* 模板預覽 Modal */}
+      {previewTemplate && (
+        <div className="fixed inset-0 bg-black/80 z-[120] flex items-center justify-center p-4 backdrop-blur-sm font-sans">
+          <div className="bg-[#222] rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center border border-gray-700">
+            <h3 className="font-black text-xl mb-4 text-white">套用「{previewTemplate.title}」？</h3>
+            <p className="text-gray-400 text-sm mb-6 font-bold">這將會替換掉目前的標題與所有階級設定 (不影響現有素材)。</p>
+            <div className="flex h-5 rounded overflow-hidden w-full bg-gray-800 mb-6 shadow-inner">
+              {previewTemplate.levels.map(l => <div key={l.id} className="flex-1 border-r border-[#2a2a2a]" style={{ backgroundColor: l.color }}></div>)}
+            </div>
+            <div className="flex gap-3 justify-center">
+              <button onClick={() => setPreviewTemplate(null)} className="px-4 py-2 rounded-lg font-bold text-gray-300 bg-gray-800 hover:bg-gray-700 w-full">取消</button>
+              <button onClick={() => { loadTemplate(previewTemplate); setPreviewTemplate(null); }} className="px-4 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700 w-full">確定套用</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 確認對話框 */}
+      {confirmAction.isOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm font-sans">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center transform transition-all">
+            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><Trash2 size={32} /></div>
+            <h3 className="font-black text-xl mb-2 text-gray-900">
+              {confirmAction.type === 'items' && `確定要徹底刪除選取的 ${selectedIds.length || 1} 張卡片？`}
+              {confirmAction.type === 'level' && <>確定刪除此階級？<br/><span className="text-sm text-gray-500 mt-1 block">(裡面的卡片將被移回素材區)</span></>}
+              {confirmAction.type === 'template' && '確定刪除這個自訂模板嗎？'}
+              {confirmAction.type === 'materialPack' && '確定刪除這個素材包嗎？'}
+              {confirmAction.type === 'clearAll' && '確定清除所有資料？這將無法復原！'}
+            </h3>
+            <div className="flex gap-3 justify-center mt-6">
+              <button onClick={() => setConfirmAction({ isOpen: false, type: '', id: '' })} className="px-4 py-2 rounded-lg font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 w-full">取消</button>
+              <button onClick={executeConfirmAction} className="px-4 py-2 rounded-lg font-bold text-white bg-red-600 hover:bg-red-700 w-full">確定</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toastMessage && ( <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-[100] bg-gray-900 text-white px-5 py-2.5 rounded-full shadow-xl text-sm font-bold flex items-center gap-2 animate-bounce">{toastMessage}</div> )}
+
+      {/* 模板中心 Modal */}
+      {showTemplates && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm font-sans">
+          <div className="bg-[#222] rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col border border-gray-700 overflow-hidden">
+            <div className="p-4 border-b border-gray-700 bg-[#111] flex flex-wrap gap-2 items-center justify-between">
+              <h3 className="font-black text-lg text-white">模板管理中心</h3>
+              <div className="flex gap-2 items-center overflow-x-auto hide-scrollbar">
+                <button onClick={() => {
+                  if (levels.length === 0) return showToast("❌ 等級為空，無法儲存！");
+                  const newTpl = { id: `custom-${Date.now()}`, title, axisName, levels };
+                  setCustomTemplates([newTpl, ...customTemplates]); showToast("✅ 已儲存至「我的自訂模板」！");
+                }} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold text-yellow-900 bg-yellow-400 rounded-md hover:bg-yellow-500 whitespace-nowrap"><Save size={16} /> 存為我的模板</button>
+                <button onClick={() => setShowTemplates(false)} className="text-gray-400 hover:text-white p-1 ml-auto"><X size={24} /></button>
+              </div>
+            </div>
+            <div className="p-4 overflow-y-auto bg-[#1a1a1a] flex-1">
+              {customTemplates.length > 0 && (
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 mb-3"><span className="w-2 h-6 bg-yellow-400 rounded-full"></span><h4 className="text-white font-bold text-lg">我的自訂模板</h4></div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {customTemplates.map((tpl) => (
+                      <div key={tpl.id} className="relative group rounded-xl bg-[#2a2a2a] border border-yellow-600/50 hover:border-yellow-400 transition-all flex flex-col">
+                        <button onClick={() => setPreviewTemplate(tpl)} className="text-left p-4 pb-2 w-full flex-1">
+                          <div className="font-bold text-yellow-400 truncate">{tpl.title || '未命名'}</div>
+                          <div className="flex h-3 rounded overflow-hidden w-full bg-gray-800 mt-2">
+                            {tpl.levels.map(l => <div key={l.id} className="flex-1 border-r border-[#2a2a2a]" style={{ backgroundColor: l.color }}></div>)}
+                          </div>
+                        </button>
+                        <div className="px-4 pb-2 pt-1 flex justify-end opacity-100 sm:opacity-0 group-hover:opacity-100 gap-2">
+                          <button onClick={(e) => {
+                            e.stopPropagation();
+                            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ type: 'tier-maker-project', ...tpl }, null, 2));
+                            const link = document.createElement('a'); link.href = dataStr; link.download = `${tpl.title || 'template'}.json`; link.click();
+                            showToast("✅ 單一模板已匯出！");
+                          }} className="text-blue-400 hover:text-blue-300 text-xs flex items-center gap-1 font-bold"><Download size={14} /> 匯出</button>
+                          <button onClick={(e) => { e.stopPropagation(); setConfirmAction({isOpen: true, type: 'template', id: tpl.id}); }} className="text-red-400 hover:text-red-300 text-xs flex items-center gap-1 font-bold"><Trash2 size={14} /> 刪除</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div>
+                <div className="flex items-center gap-2 mb-3"><span className="w-2 h-6 bg-blue-500 rounded-full"></span><h4 className="text-white font-bold text-lg">經典迷因模板 ({TEMPLATES.length})</h4></div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {TEMPLATES.map((tpl) => (
+                    <button key={tpl.id} onClick={() => setPreviewTemplate(tpl)} className="text-left p-4 rounded-xl bg-[#2a2a2a] border border-gray-600 hover:border-blue-400 transition-all">
+                      <div className="font-bold text-white truncate">{tpl.title}</div>
+                      <div className="flex h-3 rounded overflow-hidden w-full bg-gray-800 mt-2">
+                        {tpl.levels.map(l => <div key={l.id} className="flex-1 border-r border-[#2a2a2a]" style={{ backgroundColor: l.color }}></div>)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 素材包載入 Modal */}
+      {showMaterialsModal && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm font-sans">
+          <div className="bg-[#222] rounded-2xl shadow-2xl w-full max-w-lg flex flex-col border border-gray-700 overflow-hidden">
+            <div className="p-4 border-b border-gray-700 bg-[#111] flex justify-between items-center flex-wrap gap-2">
+              <h3 className="font-black text-lg text-white flex items-center gap-2"><FolderOpen size={20} className="text-blue-400"/> 素材包管理</h3>
+              <div className="flex items-center gap-2">
+                <button onClick={() => {
+                  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(customMaterials, null, 2));
+                  const link = document.createElement('a'); link.href = dataStr; link.download = `my_materials.json`; link.click();
+                }} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-gray-300 bg-gray-800 border border-gray-600 rounded-md hover:bg-gray-700">
+                  <Download size={14} /> 備份全部
+                </button>
+                <button onClick={() => setShowMaterialsModal(false)} className="text-gray-400 hover:text-white p-1"><X size={24} /></button>
+              </div>
+            </div>
+            <div className="p-4 overflow-y-auto bg-[#1a1a1a] max-h-[70vh]">
+              {customMaterials.length === 0 ? (
+                <p className="text-center text-gray-500 py-8 font-bold">還沒有素材包。<br/>在素材區點擊 💾 即可將現有卡片打包！</p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {customMaterials.map((pack) => (
+                    <div key={pack.id} className="bg-[#2a2a2a] rounded-xl border border-gray-600 p-3 flex justify-between items-center hover:border-blue-500 transition-colors">
+                      <div className="flex-1 pr-3 truncate">
+                        <div className="font-bold text-blue-300 truncate">{pack.name}</div>
+                        <div className="text-xs text-gray-400 font-bold">{pack.items.length} 張卡片</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => {
+                          const newItems = pack.items.map(i => ({ ...i, id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, levelId: null }));
+                          setItems(prev => [...prev, ...newItems]); setShowMaterialsModal(false); showToast("✅ 素材包已加入卡片池！");
+                        }} className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold px-3 py-1.5 rounded-lg whitespace-nowrap">載入卡片</button>
+                        <button onClick={() => setConfirmAction({ isOpen: true, type: 'materialPack', id: pack.id })} className="bg-red-900/40 hover:bg-red-600 text-red-300 p-1.5 rounded-lg"><Trash2 size={16} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 主要工作區 */}
+      <main className={`flex-1 max-w-7xl mx-auto w-full p-2 sm:p-6 flex flex-col gap-4 sm:gap-6 relative ${appSettings.layoutReversed ? 'lg:flex-row-reverse' : 'lg:flex-row'}`}>
+        {/* 素材區 */}
+        <section className="w-full lg:w-72 flex-shrink-0 flex flex-col gap-3 relative font-sans">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="font-black text-gray-800 text-lg">📝 素材區 ({unassignedItems.length})</h2>
+              <div className="flex gap-1.5">
+                {appSettings.isMultiSelectMode && unassignedItems.length > 0 && (
+                  <button onClick={() => setSelectedIds(unassignedItems.map(i => i.id))} className="p-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-md transition-colors" title="全選素材區"><CheckSquare size={16}/></button>
+                )}
+                <button onClick={() => {
+                  setItems(prev => {
+                    const matItems = prev.filter(i => i.levelId === null).sort((a,b) => a.text.localeCompare(b.text, 'zh-Hant'));
+                    const levelItems = prev.filter(i => i.levelId !== null);
+                    return [...levelItems, ...matItems];
+                  });
+                  showToast("🔤 素材區已排序！");
+                }} className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors" title="依照名稱排序素材"><ArrowDownAZ size={16}/></button>
+                <label className="relative p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-md transition-colors cursor-pointer" title="大量匯入圖片建立卡片">
+                  <Images size={16}/> <input type="file" multiple accept="image/*" onChange={handleBatchImport} className="hidden" />
+                  {importProgress > 0 && <div className="absolute -bottom-2 left-0 right-0 h-1.5 bg-green-200 rounded overflow-hidden"><div className="h-full bg-green-600 transition-all" style={{width: `${importProgress}%`}}></div></div>}
+                </label>
+                <button onClick={() => setInputDialog({ isOpen: true, type: 'saveMaterialPack', itemId: '', value: '', options: {} })} className="p-1.5 bg-yellow-100 hover:bg-yellow-200 text-yellow-700 rounded-md transition-colors" title="儲存為素材包"><Save size={16}/></button>
+                <button onClick={() => setShowMaterialsModal(true)} className="p-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-md transition-colors" title="管理素材包"><FolderOpen size={16}/></button>
+              </div>
+            </div>
+            
+            <form onSubmit={addNewItem} className="flex gap-2 mb-4">
+              <input type="text" value={newItemText} onChange={(e) => setNewItemText(e.target.value)} placeholder="輸入新項目..." className="flex-1 bg-gray-100 border border-transparent text-sm font-bold rounded-lg px-3 py-2 focus:bg-white focus:border-indigo-400" />
+              <button type="submit" className="bg-gray-900 text-white px-3 rounded-lg hover:bg-black font-bold"><Plus size={20}/></button>
+            </form>
+            <div 
+              className={`min-h-[120px] lg:min-h-[400px] p-2 rounded-lg border-2 border-dashed transition-colors flex flex-wrap content-start ${selectedIds.length > 0 ? 'border-indigo-400 bg-indigo-50/50' : 'border-gray-300 bg-gray-50'}`} 
+              onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, null)} onClick={() => selectedIds.length && handleZoneClick(null)}
+            >
+              {unassignedItems.length === 0 ? <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 text-sm font-bold p-4 text-center">空空的<br/>可以拖圖進來或打字新增</div> : unassignedItems.map(renderItem)}
+            </div>
+          </div>
+          
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 font-sans">
+             <h3 className="font-bold text-sm text-gray-700 mb-2">列印區背景設定</h3>
+             <div className="flex gap-2 items-center">
+               <input type="color" value={background.startsWith('http') || background.startsWith('url') ? '#1a1a1a' : background} onChange={(e) => setBackground(e.target.value)} className="w-8 h-8 rounded cursor-pointer p-0 border-none"/>
+               <input type="text" value={background} onChange={(e) => setBackground(e.target.value)} placeholder="色碼 或 圖片網址" className="flex-1 bg-gray-100 text-sm p-1.5 rounded border border-transparent focus:bg-white" />
+             </div>
+          </div>
+        </section>
+
+        {/* 評比表區 */}
+        <section className="flex-1 rounded-xl shadow-xl overflow-hidden relative border-4 border-gray-900" style={{ backgroundColor: background.startsWith('http') ? '#1a1a1a' : background }}>
+          <div id="tier-board" ref={boardRef} className="p-4 sm:p-6 min-w-full relative" style={{ backgroundColor: background.startsWith('http') ? '#1a1a1a' : background }}>
+            
+            {/* 解決匯出圖片背景 BUG 的核心層疊技術 */}
+            {background.startsWith('http') && (
+              <img src={background} crossOrigin="anonymous" alt="background" className="absolute inset-0 w-full h-full z-0" style={{ objectFit: appSettings.bgSize || 'cover', opacity: 1 - (appSettings.bgOverlay || 0) }} />
+            )}
+
+            <div className="relative z-10">
+              <div className="mb-4 text-center app-container relative">
+                <h1 onClick={() => setInputDialog({ isOpen: true, type: 'title', itemId: '', value: title, options: { color: titleColor } })} className="text-3xl sm:text-5xl font-black tracking-tight drop-shadow-md cursor-pointer hover:opacity-80 transition-colors inline-block" style={{ color: titleColor }}>{title}</h1>
+                <br/>
+                <span onClick={() => setInputDialog({ isOpen: true, type: 'axisName', itemId: '', value: axisName, options: { color: axisColor } })} className="inline-block mt-3 px-4 py-1.5 text-sm font-bold rounded-full border border-gray-700 cursor-pointer hover:opacity-80 transition-colors shadow-sm" style={{ color: axisColor, backgroundColor: '#1f2937' }}>{axisName || '+ 新增副標題/軸向'}</span>
+                
+                {/* 動態計算顯示總戰力計分板 */}
+                {appSettings.showScoreboard && totalScore > 0 && (
+                  <div className="block mt-4">
+                    <div 
+                      className="inline-flex items-center gap-2 bg-yellow-500/10 text-yellow-500 px-4 py-1.5 rounded-full border border-yellow-500/30 backdrop-blur-sm mix-blend-difference filter invert cursor-pointer hover:bg-yellow-500/20 transition-colors"
+                      onClick={() => setInputDialog({ isOpen: true, type: 'scoreboard', value: appSettings.scoreboardName || '總分/戰力指數', options: { showScoreboard: appSettings.showScoreboard } })}
+                    >
+                      <span className="font-bold text-sm">{appSettings.scoreboardName || '總分/戰力指數'}</span>
+                      <span className="font-black text-xl">{totalScore}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex flex-col border border-black bg-black rounded-lg shadow-[0_0_15px_rgba(0,0,0,0.5)]">
+                {levels.map((level, index) => {
+                  const levelItems = items.filter(item => item.levelId === level.id);
+                  const isEditing = editingLevelId === level.id;
+                  const textColor = level.textColor || getContrastYIQ(level.color, appSettings.contrastThreshold);
+                  const labelWidthClass = getLabelWidthClass();
+
+                  return (
+                    <div key={level.id} id={`level-${index}`} className={`flex min-h-[90px] bg-[#1a1a1a] border-b border-black last:border-b-0 group/row relative ${isEditing ? 'z-50' : 'z-10'} ${index === 0 ? 'rounded-t-lg' : ''} ${index === levels.length - 1 ? 'rounded-b-lg' : ''}`}>
+                      <div className={`${labelWidthClass} flex-shrink-0 flex items-center justify-center p-2 relative border-r border-black transition-colors duration-300 ${index === 0 ? 'rounded-tl-lg' : ''} ${index === levels.length - 1 ? 'rounded-bl-lg' : ''}`} style={{ backgroundColor: level.color }}>
+                        {isEditing ? (
+                          <div className="absolute top-0 left-0 bg-[#222] p-2 flex flex-col gap-1 z-50 shadow-2xl border border-gray-500 rounded-lg font-sans w-40 sm:w-48 transform -translate-x-2 -translate-y-2">
+                            <input autoFocus value={level.label} onChange={(e) => updateLevel(level.id, 'label', e.target.value)} onBlur={(e) => { if(!e.relatedTarget) setEditingLevelId(null); }} onKeyDown={(e) => e.key === 'Enter' && setEditingLevelId(null)} className="w-full text-center font-black text-xs sm:text-sm bg-[#111] text-white border border-gray-600 rounded p-1 mb-1"/>
+                            
+                            <div className="flex gap-1 w-full overflow-hidden">
+                              <div className="flex-1 flex items-center bg-[#111] rounded p-1 border border-gray-700" title="底色">
+                                <Palette size={10} className="text-gray-400 mx-1 flex-shrink-0" />
+                                <input type="color" value={level.color} onChange={(e) => updateLevel(level.id, 'color', e.target.value)} className="w-4 h-4 p-0 border-none bg-transparent cursor-pointer" />
+                              </div>
+                              <div className="flex-1 flex items-center bg-[#111] rounded p-1 border border-gray-700" title="文字顏色">
+                                <Type size={10} className="text-gray-400 mx-1 flex-shrink-0" />
+                                <input type="color" value={textColor} onChange={(e) => updateLevel(level.id, 'textColor', e.target.value)} className="w-4 h-4 p-0 border-none bg-transparent cursor-pointer" />
+                              </div>
+                              <div className="flex-1 flex items-center bg-[#111] rounded p-1 border border-gray-700" title="每張卡片分數">
+                                <span className="text-gray-400 mx-1 text-[10px] font-bold">PT</span>
+                                <input type="number" value={level.score || 0} onChange={(e) => updateLevel(level.id, 'score', Number(e.target.value))} className="w-8 h-4 p-0 border-none bg-transparent text-white text-xs text-center focus:ring-0" />
+                              </div>
+                            </div>
+
+                            <button onPointerDown={(e) => { e.preventDefault(); setConfirmAction({ isOpen: true, type: 'level', id: level.id }); }} className="mt-1 w-full bg-red-900/50 hover:bg-red-600 text-red-200 text-xs py-1 rounded flex justify-center items-center gap-1"><Trash2 size={10} /> 刪除</button>
+                          </div>
+                        ) : ( 
+                          <span className="font-black text-center break-words cursor-pointer w-full flex items-center justify-center leading-tight drop-shadow-sm app-container" style={{ color: textColor }} onClick={() => setEditingLevelId(level.id)} title="點擊編輯名稱與顏色">{level.label}</span> 
+                        )}
+                        
+                        {!isEditing && (
+                          <div className="absolute top-1 right-1 opacity-100 sm:opacity-0 group-hover/row:opacity-100 transition-opacity flex flex-col gap-1 z-20 font-sans">
+                            <button onClick={() => setEditingLevelId(level.id)} className="bg-black/50 p-1 rounded hover:bg-black text-white" title="設定"><Settings size={12} /></button>
+                            <button onClick={() => sortLevelItemsAlphabetically(level.id)} className="bg-black/50 p-1 rounded hover:bg-blue-600 text-white" title="自動依照名稱排序"><ArrowDownAZ size={12} /></button>
+                            <button onClick={() => setConfirmAction({ isOpen: true, type: 'level', id: level.id })} className="bg-black/50 p-1 rounded hover:bg-red-600 text-white" title="刪除"><Trash2 size={12} /></button>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className={`flex-1 p-1 sm:p-2 flex flex-wrap content-start gap-1 sm:gap-2 transition-all ${selectedIds.length ? 'bg-indigo-900/40 cursor-pointer shadow-[inset_0_0_0_2px_#6366f1]' : ''}`} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, level.id)} onClick={() => selectedIds.length && handleZoneClick(level.id)}>
+                        {levelItems.length === 0 && selectedIds.length ? <div className="w-full h-full flex items-center justify-center text-indigo-400 font-bold opacity-80 pointer-events-none font-sans"><MoveRight size={20} className="mr-2 hidden sm:block"/><MoveDown size={20} className="mr-2 sm:hidden"/>放入此處</div> : (
+                          <>
+                            {appSettings.isMultiSelectMode && levelItems.length > 0 && (
+                              <button onClick={(e) => { e.stopPropagation(); setSelectedIds(prev => { const newIds = levelItems.map(i => i.id); return [...new Set([...prev, ...newIds])]; }); }} className="absolute bottom-1 right-1 bg-black/40 hover:bg-black/60 text-white p-1 rounded z-20" title="全選此階級"><CheckSquare size={12} /></button>
+                            )}
+                            {levelItems.map(renderItem)}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* 匯出圖內嵌 QR Code */}
+              {appSettings.embedQR && getMiniQR() && (
+                <div className="absolute -bottom-2 -right-2 sm:bottom-2 sm:right-2 p-1.5 bg-white/90 rounded-lg shadow-md z-20 flex flex-col items-center gap-0.5 backdrop-blur-md border border-gray-300 scale-75 sm:scale-100 origin-bottom-right">
+                  <span className="text-[8px] font-black text-gray-800 tracking-widest">SCAN ME</span>
+                  <img src={getMiniQR()} alt="QR" className="w-12 h-12" crossOrigin="anonymous"/>
+                </div>
+              )}
+              
+            </div>
+          </div>
+          <div className="p-4 sm:p-6 pt-0" style={{ backgroundColor: background.startsWith('http') ? 'transparent' : background }}>
+            <button onClick={addLevel} className="w-full py-3 bg-black/40 text-gray-300 font-bold rounded-lg hover:bg-black/80 hover:text-white transition-colors flex items-center justify-center gap-2 border border-gray-600/50 backdrop-blur-sm font-sans shadow-inner z-10 relative">
+              <Plus size={18} /> 新增階級
+            </button>
+          </div>
+        </section>
+      </main>
+
+      {/* 教學對話框 */}
+      {showConfirmRestart && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm font-sans">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <div className="w-16 h-16 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-4"><BellRing size={32} /></div>
+            <h3 className="font-bold text-xl mb-2 text-gray-900">重新觀看教學？</h3>
+            <p className="text-gray-500 text-sm mb-6">這將會清除目前的版面並載入教學範例喔！</p>
+            <div className="flex gap-3 justify-center">
+              <button onClick={() => setShowConfirmRestart(false)} className="px-4 py-2 rounded-lg font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 w-full">取消</button>
+              <button onClick={startTutorial} className="px-4 py-2 rounded-lg font-bold text-white bg-yellow-500 hover:bg-yellow-600 w-full">確定</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tutorial.active && (
+        <div className="fixed inset-0 z-40 pointer-events-none flex flex-col justify-end sm:justify-center items-center pb-4 sm:pb-0 px-3 sm:px-4 font-sans">
+          <div className="absolute inset-0 bg-black/60 transition-opacity" />
+          <div className="pointer-events-auto relative z-50 bg-white rounded-2xl shadow-2xl p-5 sm:p-6 w-full max-w-sm text-center border-4 border-yellow-400 mb-2 sm:mb-0">
+            <div className="flex justify-center mb-3 text-yellow-500"><Info size={36} /></div>
+            {tutorial.step === 1 && (<><h3 className="text-xl font-black mb-2">歡迎來到評比製造所！</h3><p className="text-gray-600 text-sm mb-4">按 Ctrl+Z 可以復原操作喔！</p><button onClick={nextTutorialStep} className="bg-yellow-500 text-white font-black py-2 px-6 rounded-xl w-full mt-2">開始導覽</button></>)}
+            {tutorial.step === 2 && (<><h3 className="text-lg font-bold mb-2">認識卡片池</h3><p className="text-gray-600 text-sm mb-4">👉 點擊發光的卡片 (按住 Ctrl 可多選)</p><button onClick={nextTutorialStep} className="text-gray-400 text-sm underline mt-2">略過</button></>)}
+            {tutorial.step === 3 && (<><h3 className="text-lg font-bold mb-2">放入欄位</h3><p className="text-gray-600 text-sm mb-4">點擊發光的階級，把卡片放進去！</p><button onClick={nextTutorialStep} className="text-gray-400 text-sm underline mt-2">略過</button></>)}
+            {tutorial.step === 4 && (<><h3 className="text-lg font-bold mb-2">超強擴充</h3><p className="text-gray-600 text-sm mb-4">點擊素材區「📂批次」可匯入海量圖片！</p><button onClick={nextTutorialStep} className="bg-yellow-500 text-white font-black py-2 px-6 rounded-xl w-full mt-2">瞭解了</button></>)}
+            {tutorial.step === 5 && (<><h3 className="text-lg font-bold mb-2">一鍵打包 & 設定</h3><p className="text-gray-600 text-sm mb-4">點上方「專案」可調整各種全域設定！<br/>最後點「儲存大圖」即可下載！</p><button onClick={nextTutorialStep} className="bg-yellow-500 text-white font-black py-2 px-6 rounded-xl w-full mt-2">最後一步</button></>)}
+            {tutorial.step === 6 && (<><h3 className="text-xl font-black mb-2 text-green-600">🎉 準備就緒！</h3><button onClick={endTutorial} className="bg-gray-900 text-white font-black py-3 px-6 rounded-xl w-full mt-4 shadow-lg">開始創造</button></>)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
