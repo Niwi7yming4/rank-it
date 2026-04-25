@@ -26,7 +26,7 @@
 
 ### 線上版
 > 放在 GitHub Pages 上的網址
-> https://你的帳號.github.io/專案名稱/
+> https://Niwi7yming4.github.io/rank-it/
 
 ### 本機使用
 直接下載 `index.html`，用瀏覽器打開即可，**不需要安裝任何東西**。
@@ -43,9 +43,6 @@
 | Mobile Drag Drop | 手機拖放支援 |
 | Google Fonts | 128 種字體 |
 
-## 📸 截圖
-
-（建議放 2-3 張：主畫面 + 匯出預覽 + QR Code 分享）
 
 ## 📄 授權
 
